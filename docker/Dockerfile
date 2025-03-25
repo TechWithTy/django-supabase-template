@@ -1,5 +1,5 @@
 # Build stage
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
@@ -17,14 +17,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install pipenv
-RUN pip install --no-cache-dir pipenv
+# Copy requirements file
+COPY requirements.txt /app/
 
-# Copy Pipfile and install dependencies
-COPY Pipfile Pipfile.lock* /app/
-
-# Install dependencies to system (not in virtualenv)
-RUN pipenv install --system --deploy
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Runtime stage
 FROM python:3.11-slim
