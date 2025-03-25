@@ -185,6 +185,36 @@ CELERY_TIMEZONE = TIME_ZONE
 # Redis settings
 REDIS_URL = os.getenv('REDIS_URL', 'redis://redis:6379/0')
 
+# Redis Cache Configuration
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': os.getenv('REDIS_URL', 'redis://redis:6379/1'),
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            'PARSER_CLASS': 'redis.connection.HiredisParser',
+            'CONNECTION_POOL_CLASS': 'redis.BlockingConnectionPool',
+            'CONNECTION_POOL_CLASS_KWARGS': {
+                'max_connections': 50,
+                'timeout': 20,
+            },
+            'MAX_CONNECTIONS': 1000,
+            'IGNORE_EXCEPTIONS': True,
+        }
+    }
+}
+
+# Cache time to live is 15 minutes
+CACHE_TTL = 60 * 15
+
+# Use Redis for session store
+SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+SESSION_CACHE_ALIAS = 'default'
+
+# Use Redis for rate limiting
+RATELIMIT_USE_REDIS = True
+RATELIMIT_REDIS_URL = os.getenv('REDIS_URL', 'redis://redis:6379/2')
+
 # Sentry settings
 SENTRY_DSN = os.getenv('SENTRY_DSN')
 if SENTRY_DSN and not DEBUG:
@@ -232,23 +262,7 @@ if not DEBUG:
     
     # Rate limiting - already configured in REST_FRAMEWORK
     
-    # Cache settings for production
-    CACHES = {
-        'default': {
-            'BACKEND': 'django_redis.cache.RedisCache',
-            'LOCATION': REDIS_URL,
-            'OPTIONS': {
-                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-                'IGNORE_EXCEPTIONS': True,
-            }
-        }
-    }
-    
-    # Use Redis as session engine
-    SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
-    SESSION_CACHE_ALIAS = 'default'
-
-# Logging configuration
+    # Logging configuration
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,

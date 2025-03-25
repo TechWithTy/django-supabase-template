@@ -1,0 +1,147 @@
+version: '3.8'
+
+services:
+  # Django backend service
+  backend:
+    image: ghcr.io/${GITHUB_REPOSITORY}:production
+    restart: unless-stopped
+    volumes:
+      - static-data:/app/staticfiles
+      - media-data:/app/media
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+    env_file:
+      - .env.production
+    environment:
+      - DJANGO_DEBUG=False
+      - DJANGO_ALLOWED_HOSTS=${DOMAIN},backend
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    networks:
+      - app-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Redis for Celery and caching
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - app-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # Celery worker for background tasks
+  celery:
+    image: ghcr.io/${GITHUB_REPOSITORY}:production
+    restart: unless-stopped
+    command: celery -A core worker -l info
+    depends_on:
+      - redis
+      - backend
+    env_file:
+      - .env.production
+    environment:
+      - C_FORCE_ROOT=true
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 768M
+    networks:
+      - app-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Celery beat for scheduled tasks
+  celery-beat:
+    image: ghcr.io/${GITHUB_REPOSITORY}:production
+    restart: unless-stopped
+    command: celery -A core beat -l info
+    depends_on:
+      - redis
+      - backend
+    env_file:
+      - .env.production
+    networks:
+      - app-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # Prometheus for metrics
+  prometheus:
+    image: prom/prometheus:v2.44.0
+    restart: unless-stopped
+    volumes:
+      - ./prometheus:/etc/prometheus
+      - prometheus-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.console.libraries=/etc/prometheus/console_libraries
+      - --web.console.templates=/etc/prometheus/consoles
+      - --web.enable-lifecycle
+    ports:
+      - "9090:9090"
+    networks:
+      - app-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # NGINX for static files and reverse proxy
+  nginx:
+    image: nginx:1.25-alpine
+    restart: unless-stopped
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - static-data:/var/www/static
+      - media-data:/var/www/media
+      - ./nginx/ssl:/etc/nginx/ssl
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - backend
+    networks:
+      - app-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  static-data:
+  media-data:
+  redis-data:
+  prometheus-data:

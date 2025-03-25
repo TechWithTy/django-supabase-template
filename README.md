@@ -1,13 +1,14 @@
 # Django + Supabase Template
 
-A robust Django template with Supabase authentication integration, designed for scalable API development.
+A robust Django template with Supabase authentication integration, designed for scalable API development with built-in credit system, monitoring, and deployment solutions.
 
 ## Features
 
 - 🔐 **Secure Authentication** via Supabase JWT validation
-- 🚦 **Rate Limiting & Credit Tracking** for API usage control
-- 📊 **Logging & Error Monitoring** with Sentry integration
-- 🐳 **Dockerized Deployment** for consistent environments
+- 🚦 **Rate Limiting & Credit System** with concurrency-safe credit tracking for API usage
+- 📊 **Monitoring & Observability** with Prometheus metrics and structured logging
+- 🐳 **Production-Ready Deployment** with Docker, Hetzner Cloud, and Coolify support
+- 🔄 **Async Task Processing** with Redis and Celery integration
 - 🗄️ **Flexible ORM Options** with Django ORM and optional Drizzle ORM support
 - 🚀 **CI/CD Pipeline Integration** for automated deployments
 
@@ -18,7 +19,7 @@ django-supabase-template/
 ├── backend/             # Django application code
 ├── config/              # Environment and configuration files
 ├── docker/              # Docker-related files
-├── docs/                # API documentation
+├── _docs/               # Project documentation
 ├── .env.example         # Example environment variables
 ├── docker-compose.yml   # Docker Compose configuration
 └── README.md            # Project documentation
@@ -107,13 +108,25 @@ To simplify the integration of the Supabase template into your existing Python p
 3. Django validates the JWT token using middleware
 4. Role-based access control is enforced based on Supabase claims
 
-## API Rate Limiting & Credit System
+## Enhanced Credit System
 
-The template includes:
+The template includes a robust credit system with advanced features:
+
+### Core Features
 
 - Per-user rate limiting via Django REST Framework throttling
 - Credit-based usage tracking for premium features
 - API endpoints to check remaining credits
+- Concurrency-safe credit operations with row-level locking
+- Credit hold mechanism for long-running operations
+- UUID primary keys for distributed environments
+- Structured logging for comprehensive auditing
+
+### Monitoring and Observability
+
+- Prometheus metrics for tracking credit transactions and balances
+- Performance measurement with duration metrics and failure tracking
+- Integration with monitoring dashboards
 
 ## Managing Credits for API Endpoints
 
@@ -144,10 +157,66 @@ The `CreditUsageRate` model allows administrators to define credit costs for dif
    existing_rate.save()                    # Save changes
    ```
 
-3. **Admin Interface**:
-   You can also manage credit usage rates through the Django admin interface by navigating to the `Credit Usage Rates` section.
+3. **Managing Credit Holds**:
+   For long-running operations, you can place a hold on credits:
 
-## Integrating the Complete SaaS Backend into an Existing Python Project
+   ```python
+   from apps.credits.models import CreditHold
+   
+   # Place a hold on 10 credits
+   hold = CreditHold.place_hold(
+       user=request.user,
+       amount=10,
+       description="Long-running task",
+       endpoint="/api/long-task/"
+   )
+   
+   # Later, release or consume the hold
+   if task_successful:
+       hold.consume()  # Convert hold to an actual deduction
+   else:
+       hold.release()  # Release the hold without charging credits
+   ```
+
+## Production Deployment
+
+For detailed deployment instructions, see the [deployment documentation](./_docs/deployment.md).
+
+### Supported Deployment Platforms
+
+- **Hetzner Cloud**: Complete instructions for setting up on Hetzner Cloud servers
+- **Coolify**: Step-by-step guide for deploying with the Coolify platform
+
+### Environment Variables
+
+For a comprehensive list of environment variables and their descriptions, see the [environment variables reference](./_docs/environment_variables.md).
+
+## Monitoring Setup
+
+The template includes Prometheus integration for monitoring:
+
+1. **Metrics Collection**:
+   - API endpoint response times
+   - Credit transactions and balances
+   - Task queue performance
+
+2. **Prometheus Configuration**:
+   - Pre-configured prometheus.yml in the config directory
+   - Django-prometheus integration for easy metrics exposure
+
+3. **Dashboard Integration**:
+   - Ready to integrate with Grafana for visualization
+
+## Documentation
+
+Comprehensive documentation is available in the `_docs/` directory:
+
+- [Deployment Guide](./_docs/deployment.md)
+- [Environment Variables](./_docs/environment_variables.md)
+- [Credit System Documentation](./_docs/credit_based_views.md)
+- [Project Roadmap](./_docs/_Roadmap.md)
+
+## Integrating into an Existing Python Project
 
 To transform your existing Python project into a SaaS-ready API with monitoring, task queues, and credit management, follow these comprehensive steps:
 
@@ -191,131 +260,7 @@ To transform your existing Python project into a SaaS-ready API with monitoring,
    - Other service configurations
 
 6. **Integrate Apps into Your Django Project**:
-   In your existing Django project's `settings.py`, add the necessary apps and configurations:
-
-   ```python
-   INSTALLED_APPS = [
-       # Existing apps
-       ...,
-       # New apps
-       'apps.credits',
-       'apps.authentication',
-       'apps.users',
-       'django_prometheus',
-   ]
-
-   # Add Prometheus middleware
-   MIDDLEWARE = [
-       'django_prometheus.middleware.PrometheusBeforeMiddleware',
-       # Your existing middleware
-       ...,
-       'django_prometheus.middleware.PrometheusAfterMiddleware',
-   ]
-
-   # Configure Celery
-   CELERY_BROKER_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
-   CELERY_RESULT_BACKEND = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
-   ```
-
-7. **Configure Authentication**:
-   Set up Supabase authentication in your project:
-
-   ```python
-   # Add to settings.py
-   REST_FRAMEWORK = {
-       'DEFAULT_AUTHENTICATION_CLASSES': [
-           'apps.authentication.authentication.SupabaseAuthentication',
-           # Your existing authentication classes
-       ],
-   }
-
-   # Supabase settings
-   SUPABASE_URL = os.environ.get('SUPABASE_URL')
-   SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
-   ```
-
-8. **Set Up Celery**:
-   Create or modify your `celery.py` file to include task queues:
-
-   ```python
-   # celery.py
-   from __future__ import absolute_import, unicode_literals
-   import os
-   from celery import Celery
-
-   os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'your_project.settings')
-
-   app = Celery('your_project')
-   app.config_from_object('django.conf:settings', namespace='CELERY')
-   app.autodiscover_tasks()
-   ```
-
-9. **Run Migrations**:
-   Apply the database migrations:
-
-   ```bash
-   python manage.py migrate
-   ```
-
-10. **Create Custom Endpoints**:
-    Extend the existing views or create new ones for your specific business logic:
-
-    ```python
-    # your_app/views.py
-    from apps.credits.throttling import CreditBasedThrottle
-    from rest_framework.views import APIView
-    from rest_framework.response import Response
-
-    class YourCustomEndpoint(APIView):
-        throttle_classes = [CreditBasedThrottle]
-
-        def post(self, request):
-            # Your custom logic here
-            return Response({"result": "success"})
-    ```
-
-11. **Configure Credit Usage Rates**:
-    Set up credit costs for your custom endpoints:
-
-    ```bash
-    python manage.py shell
-    ```
-
-    ```python
-    from apps.credits.models import CreditUsageRate
-    CreditUsageRate.objects.create(endpoint_path='/api/your-endpoint/', credits_per_request=5)
-    ```
-
-12. **Start the Full Stack**:
-    Launch the entire application stack using Docker Compose:
-
-    ```bash
-    docker-compose up -d
-    ```
-
-13. **Access Services**:
-
-    - Django API: http://localhost:8000/api/
-    - Django Admin: http://localhost:8000/admin/
-    - Prometheus: http://localhost:9090/
-
-14. **Deploy Your SaaS API**:
-    Use the included CI/CD workflows to deploy your application to your preferred hosting provider.
-
-15. **Monitor and Scale**:
-    Use Prometheus metrics to monitor usage and performance, and scale your services as needed.
-
-## Monitoring & Error Tracking
-
-- Prometheus metrics exposed at `/metrics`
-- Sentry integration for error tracking and performance monitoring
-
-## Deployment
-
-The project is fully Dockerized and includes CI/CD pipeline configurations for:
-
-- GitHub Actions
-- GitLab CI
+   In your existing Django project's `settings.py`, add the necessary apps and configurations.
 
 ## License
 

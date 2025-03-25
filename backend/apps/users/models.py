@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, transaction
 from django.contrib.auth.models import User
 from django.utils.translation import gettext_lazy as _
 
@@ -65,21 +65,44 @@ class UserProfile(models.Model):
         """
         return self.credits_balance >= required_credits
     
+    @transaction.atomic
     def deduct_credits(self, amount: int) -> bool:
         """
-        Deduct credits from the user's balance.
+        Deduct credits from the user's balance with transaction safety.
+        
+        Uses select_for_update to lock the row during transaction, preventing race conditions
+        when multiple requests attempt to deduct credits simultaneously.
         
         Returns True if successful, False if insufficient credits.
         """
-        if self.has_sufficient_credits(amount):
-            self.credits_balance -= amount
-            self.save(update_fields=['credits_balance', 'updated_at'])
+        # Get fresh data with select_for_update to prevent race conditions
+        user_profile = UserProfile.objects.select_for_update().get(id=self.id)
+        
+        if user_profile.has_sufficient_credits(amount):
+            user_profile.credits_balance -= amount
+            user_profile.save(update_fields=['credits_balance', 'updated_at'])
+            
+            # Update current instance to match database state
+            self.credits_balance = user_profile.credits_balance
+            self.updated_at = user_profile.updated_at
+            
             return True
         return False
     
+    @transaction.atomic
     def add_credits(self, amount: int) -> None:
         """
-        Add credits to the user's balance.
+        Add credits to the user's balance with transaction safety.
+        
+        Uses select_for_update to lock the row during transaction, preventing race conditions
+        when multiple operations might modify the credit balance simultaneously.
         """
-        self.credits_balance += amount
-        self.save(update_fields=['credits_balance', 'updated_at'])
+        # Get fresh data with select_for_update to prevent race conditions
+        user_profile = UserProfile.objects.select_for_update().get(id=self.id)
+        
+        user_profile.credits_balance += amount
+        user_profile.save(update_fields=['credits_balance', 'updated_at'])
+        
+        # Update current instance to match database state
+        self.credits_balance = user_profile.credits_balance
+        self.updated_at = user_profile.updated_at

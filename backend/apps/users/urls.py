@@ -1,14 +1,21 @@
+from backend.apps.users.views.creditable_views.main_view import credit_script_view
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
-from . import views
-from ._views import auth_view, client_view, database_view, edge_functions_view, realtime_view, storage_view
+from . import base
+from .views import auth_view, client_view, database_view, edge_functions_view, health_check, realtime_view, storage_view, script_view
 
 router = DefaultRouter()
-router.register(r'users', views.UserViewSet)
+router.register(r'users', base.UserViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
+    
+    # Script execution endpoint
+    path('script/run/', credit_script_view.execute_main_script, name='run_main_script'),
+    
+    # Health check endpoint
+    path('health/', health_check, name='health_check'),
     
     # Auth endpoints
     path('auth/anonymous/', auth_view.create_anonymous_user, name='create_anonymous_user'),

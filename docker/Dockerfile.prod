@@ -1,0 +1,84 @@
+# Multi-stage build for production Django deployment
+# Stage 1: Build dependencies
+FROM python:3.11-slim as builder
+
+WORKDIR /app
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Install system dependencies required for building
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    git \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install pipenv
+RUN pip install --no-cache-dir pipenv
+
+# Copy Pipfile and install dependencies
+COPY Pipfile Pipfile.lock* /app/
+
+# Install dependencies with dev dependencies excluded
+RUN pipenv install --system --deploy --ignore-pipfile
+
+# Stage 2: Python wheels
+FROM builder as wheels
+
+# Copy the project files
+COPY . /app/
+
+# Generate Python wheels
+RUN pip wheel --no-cache-dir --wheel-dir /app/wheels -r <(pipenv requirements)
+
+# Stage 3: Final lightweight runtime image
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Create app user
+RUN useradd -ms /bin/bash appuser
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    APP_HOME=/app
+
+# Install runtime dependencies only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev \
+    curl \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy wheels and install dependencies
+COPY --from=wheels /app/wheels /wheels
+RUN pip install --no-cache-dir --no-index --find-links=/wheels /wheels/* \
+    && rm -rf /wheels
+
+# Copy project
+COPY backend/ /app/
+
+# Create necessary directories
+RUN mkdir -p /app/staticfiles /app/media
+
+# Change ownership to app user
+RUN chown -R appuser:appuser /app
+
+# Switch to app user
+USER appuser
+
+# Add healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+  CMD curl -f http://localhost:8000/api/health/ || exit 1
+
+# Set restart policy
+LABEL com.centurylinklabs.watchtower.enable="true"
+
+# Run gunicorn
+CMD ["gunicorn", "core.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "4", "--threads", "2", "--worker-tmp-dir", "/dev/shm", "--worker-class", "gthread", "--log-file", "-", "--access-logfile", "-"]
