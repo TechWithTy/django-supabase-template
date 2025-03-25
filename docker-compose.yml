@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  # Django backend service
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    volumes:
+      - ./backend:/app
+      - sqlite-data:/app/db.sqlite3
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+    env_file:
+      - .env
+    command: >-
+      sh -c "python manage.py migrate &&
+             python manage.py runserver 0.0.0.0:8000"
+    networks:
+      - app-network
+
+  # Redis for Celery and caching
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - app-network
+
+  # Celery worker for background tasks
+  celery:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    command: celery -A core worker -l info
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - redis
+      - backend
+    env_file:
+      - .env
+    networks:
+      - app-network
+
+  # Celery beat for scheduled tasks
+  celery-beat:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    command: celery -A core beat -l info
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - redis
+      - backend
+    env_file:
+      - .env
+    networks:
+      - app-network
+
+  # Prometheus for metrics
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    networks:
+      - app-network
+
+volumes:
+  redis-data:
+  prometheus-data:
+  sqlite-data:
+
+networks:
+  app-network:
+    driver: bridge
