@@ -19,6 +19,8 @@ djangorestframework = "==3.14.0"
 django-cors-headers = "==4.3.1"
 django-filter = "==23.5"
 django-prometheus-metrics = "==0.2.1"
+django-csp = "==3.8"
+django-redis = "==5.4.0"
 
 # Database
 psycopg2-binary = "==2.9.9"

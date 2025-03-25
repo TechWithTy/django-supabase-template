@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional, Union
 
-from .service import SupabaseService
+from ._service import SupabaseService
 
 class SupabaseDatabaseService(SupabaseService):
     """

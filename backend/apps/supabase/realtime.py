@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional
 
-from .service import SupabaseService
+from ._service import SupabaseService
 
 class SupabaseRealtimeService(SupabaseService):
     """

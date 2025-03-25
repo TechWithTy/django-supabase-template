@@ -189,3 +189,148 @@ class TestSupabaseAuthService:
         # Verify result
         assert result['id'] == 'user-id'
         assert result['email'] == 'test@example.com'
+
+    @patch.object(SupabaseAuthService, '_make_request')
+    def test_refresh_token(self, mock_make_request, auth_service):
+        """Test refreshing authentication token"""
+        # Configure mock response
+        mock_make_request.return_value = {
+            'access_token': 'new-access-token',
+            'refresh_token': 'new-refresh-token',
+            'user': {
+                'id': 'user-id',
+                'email': 'test@example.com'
+            }
+        }
+        
+        # Call refresh_token method
+        result = auth_service.refresh_token(refresh_token='old-refresh-token')
+        
+        # Verify request was made correctly
+        mock_make_request.assert_called_once_with(
+            method='POST',
+            endpoint='/auth/v1/token',
+            data={
+                'refresh_token': 'old-refresh-token',
+                'grant_type': 'refresh_token'
+            }
+        )
+        
+        # Verify result
+        assert result['access_token'] == 'new-access-token'
+        assert result['refresh_token'] == 'new-refresh-token'
+    
+    @patch.object(SupabaseAuthService, '_make_request')
+    def test_reset_password_for_email(self, mock_make_request, auth_service):
+        """Test sending password reset email"""
+        # Configure mock response
+        mock_make_request.return_value = {}
+        
+        # Call reset_password_for_email method
+        auth_service.reset_password_for_email(email='test@example.com')
+        
+        # Verify request was made correctly
+        mock_make_request.assert_called_once_with(
+            method='POST',
+            endpoint='/auth/v1/recover',
+            data={
+                'email': 'test@example.com'
+            }
+        )
+    
+    @patch.object(SupabaseAuthService, '_make_request')
+    def test_get_user_error_handling(self, mock_make_request, auth_service):
+        """Test error handling when getting user data"""
+        # Configure mock to raise an exception
+        mock_make_request.side_effect = Exception('API error')
+        
+        # Call get_user method and expect it to raise an exception
+        with pytest.raises(Exception) as exc_info:
+            auth_service.get_user(auth_token='invalid-token')
+        
+        # Verify the exception message
+        assert 'API error' in str(exc_info.value)
+    
+    @patch.object(SupabaseAuthService, '_make_request')
+    def test_delete_user(self, mock_make_request, auth_service):
+        """Test deleting a user as admin"""
+        # Configure mock response
+        mock_make_request.return_value = {}
+        
+        # Call delete_user method
+        auth_service.delete_user(user_id='user-id')
+        
+        # Verify request was made correctly
+        mock_make_request.assert_called_once_with(
+            method='DELETE',
+            endpoint='/auth/v1/admin/users/user-id',
+            is_admin=True
+        )
+    
+    @patch.object(SupabaseAuthService, '_make_request')
+    def test_list_users(self, mock_make_request, auth_service):
+        """Test listing users as admin"""
+        # Configure mock response
+        mock_make_request.return_value = {
+            'users': [
+                {
+                    'id': 'user-id-1',
+                    'email': 'user1@example.com'
+                },
+                {
+                    'id': 'user-id-2',
+                    'email': 'user2@example.com'
+                }
+            ],
+            'aud': 'authenticated',
+            'total': 2
+        }
+        
+        # Call list_users method
+        result = auth_service.list_users()
+        
+        # Verify request was made correctly
+        mock_make_request.assert_called_once_with(
+            method='GET',
+            endpoint='/auth/v1/admin/users',
+            is_admin=True
+        )
+        
+        # Verify result
+        assert len(result['users']) == 2
+        assert result['users'][0]['email'] == 'user1@example.com'
+        assert result['users'][1]['email'] == 'user2@example.com'
+    
+    @patch.object(SupabaseAuthService, '_make_request')
+    def test_invite_user_by_email(self, mock_make_request, auth_service):
+        """Test inviting a user by email"""
+        # Configure mock response
+        mock_make_request.return_value = {
+            'user': {
+                'id': 'user-id',
+                'email': 'test@example.com',
+                'app_metadata': {},
+                'user_metadata': {}
+            }
+        }
+        
+        # Call invite_user_by_email method
+        result = auth_service.invite_user_by_email(
+            email='test@example.com',
+            user_metadata={'role': 'editor'}
+        )
+        
+        # Verify request was made correctly
+        mock_make_request.assert_called_once_with(
+            method='POST',
+            endpoint='/auth/v1/invite',
+            is_admin=True,
+            data={
+                'email': 'test@example.com',
+                'data': {'role': 'editor'}
+            }
+        )
+        
+        # Verify result
+        assert result['user']['id'] == 'user-id'
+        assert result['user']['email'] == 'test@example.com'

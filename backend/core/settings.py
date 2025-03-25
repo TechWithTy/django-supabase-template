@@ -40,6 +40,7 @@ THIRD_PARTY_APPS = [
     'corsheaders',
     'django_prometheus',
     'django_filters',
+    'csp',  # Added for Content Security Policy
 ]
 
 LOCAL_APPS = [
@@ -53,6 +54,7 @@ INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
 MIDDLEWARE = [
     'django_prometheus.middleware.PrometheusBeforeMiddleware',  # Prometheus first
+    'csp.middleware.CSPMiddleware',  # Added for Content Security Policy
     'django.middleware.security.SecurityMiddleware',
     'corsheaders.middleware.CorsMiddleware',  # CORS before CommonMiddleware
     'whitenoise.middleware.WhiteNoiseMiddleware',  # Whitenoise for static files
@@ -128,6 +130,9 @@ MEDIA_ROOT = BASE_DIR / 'media'
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# Custom user model
+AUTH_USER_MODEL = 'authentication.CustomUser'
+
 # REST Framework settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -197,6 +202,51 @@ if SENTRY_DSN and not DEBUG:
         send_default_pii=True,
         environment=os.getenv('ENVIRONMENT', 'production'),
     )
+
+# Security settings - enhanced for production
+if not DEBUG:
+    # HTTPS/SSL settings
+    SECURE_SSL_REDIRECT = True
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    
+    # Session security settings
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    CSRF_COOKIE_HTTPONLY = True
+    
+    # Security headers
+    SECURE_HSTS_SECONDS = 31536000  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_BROWSER_XSS_FILTER = True
+    X_FRAME_OPTIONS = 'DENY'  # Prevents clickjacking
+    
+    # Content Security Policy
+    CSP_DEFAULT_SRC = ("'self'",)
+    CSP_STYLE_SRC = ("'self'", "'unsafe-inline'", "https://fonts.googleapis.com")
+    CSP_SCRIPT_SRC = ("'self'", "'unsafe-inline'", "'unsafe-eval'")
+    CSP_FONT_SRC = ("'self'", "https://fonts.gstatic.com")
+    CSP_IMG_SRC = ("'self'", "data:", "https:")
+    
+    # Rate limiting - already configured in REST_FRAMEWORK
+    
+    # Cache settings for production
+    CACHES = {
+        'default': {
+            'BACKEND': 'django_redis.cache.RedisCache',
+            'LOCATION': REDIS_URL,
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+                'IGNORE_EXCEPTIONS': True,
+            }
+        }
+    }
+    
+    # Use Redis as session engine
+    SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+    SESSION_CACHE_ALIAS = 'default'
 
 # Logging configuration
 LOGGING = {

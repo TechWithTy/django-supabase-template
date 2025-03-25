@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Optional, Union, BinaryIO
 import os
 
-from .service import SupabaseService
+from ._service import SupabaseService
 
 class SupabaseStorageService(SupabaseService):
     """

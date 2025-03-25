@@ -8,6 +8,21 @@ import logging
 
 logger = logging.getLogger('apps.supabase')
 
+class SupabaseError(Exception):
+    """Base exception for Supabase-related errors"""
+    pass
+
+class SupabaseAuthError(SupabaseError):
+    """Exception raised for authentication errors"""
+    pass
+
+class SupabaseAPIError(SupabaseError):
+    """Exception raised for API errors"""
+    def __init__(self, message: str, status_code: int = None, details: Dict = None):
+        self.status_code = status_code
+        self.details = details or {}
+        super().__init__(message)
+
 class SupabaseService:
     """
     Service class for interacting with Supabase API.
@@ -60,6 +75,7 @@ class SupabaseService:
         data: Optional[Dict[str, Any]] = None,
         params: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None,
+        timeout: int = 30,
     ) -> Dict[str, Any]:
         """
         Make a request to the Supabase API.
@@ -72,12 +88,16 @@ class SupabaseService:
             data: Optional request body data
             params: Optional query parameters
             headers: Optional additional headers
+            timeout: Request timeout in seconds
             
         Returns:
             Response data as dictionary
             
         Raises:
-            Exception: If the request fails
+            SupabaseAuthError: If there's an authentication error
+            SupabaseAPIError: If the API request fails
+            SupabaseError: For other Supabase-related errors
+            Exception: For unexpected errors
         """
         url = f"{self.base_url}{endpoint}"
         
@@ -87,15 +107,26 @@ class SupabaseService:
             request_headers.update(headers)
         
         try:
+            logger.debug(f"Making {method} request to {url}")
             response = requests.request(
                 method=method,
                 url=url,
                 headers=request_headers,
                 json=data,
-                params=params
+                params=params,
+                timeout=timeout
             )
             
-            # Raise exception for error status codes
+            # Log request details at debug level
+            logger.debug(f"Request to {url}: {method} - Status: {response.status_code}")
+            
+            # Handle different error scenarios
+            if response.status_code == 401 or response.status_code == 403:
+                error_detail = self._parse_error_response(response)
+                logger.error(f"Authentication error: {error_detail}")
+                raise SupabaseAuthError(f"Authentication error: {error_detail}")
+                
+            # Raise exception for other error status codes
             response.raise_for_status()
             
             # Return JSON response if available, otherwise return empty dict
@@ -104,16 +135,40 @@ class SupabaseService:
             return {}
             
         except requests.exceptions.HTTPError as e:
-            logger.error(f"Supabase API error: {str(e)}")
-            # Try to get error details from response
-            error_detail = {}
-            try:
-                error_detail = response.json()
-            except Exception:
-                error_detail = {'status': response.status_code, 'message': response.text}
-                
-            raise Exception(f"Supabase API error: {error_detail}")
+            error_detail = self._parse_error_response(response)
+            logger.error(f"Supabase API error: {str(e)} - Details: {error_detail}")
+            raise SupabaseAPIError(
+                message=f"Supabase API error: {str(e)}", 
+                status_code=response.status_code,
+                details=error_detail
+            )
+            
+        except requests.exceptions.ConnectionError as e:
+            logger.error("Supabase connection error: " + str(e))
+            raise SupabaseError("Connection error: Unable to connect to Supabase API. Check your network connection and Supabase URL.")
+            
+        except requests.exceptions.Timeout as e:
+            logger.error(f"Supabase request timeout: {str(e)}")
+            raise SupabaseError(f"Request timeout: The request to Supabase API timed out after {timeout} seconds.")
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Supabase request exception: {str(e)}")
+            raise SupabaseError(f"Request error: {str(e)}")
             
         except Exception as e:
-            logger.error(f"Supabase request error: {str(e)}")
-            raise Exception(f"Supabase request error: {str(e)}")
+            logger.exception(f"Unexpected error during Supabase request: {str(e)}")
+            raise Exception(f"Unexpected error during Supabase request: {str(e)}")
+    
+    def _parse_error_response(self, response: requests.Response) -> Dict:
+        """Parse error response from Supabase API
+        
+        Args:
+            response: Response object from requests
+            
+        Returns:
+            Dictionary containing error details
+        """
+        try:
+            return response.json()
+        except json.JSONDecodeError:
+            return {'status': response.status_code, 'message': response.text}
