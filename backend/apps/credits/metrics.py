@@ -3,6 +3,7 @@ from prometheus_client import Counter, Gauge, Histogram
 import time
 from functools import wraps
 import logging
+from django.db import models
 
 logger = logging.getLogger("credits.metrics")
 
