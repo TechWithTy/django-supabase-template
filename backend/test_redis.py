@@ -1,17 +1,23 @@
 import os
+import logging
+import time
+
+# Set Django settings module before importing Django-related modules
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
 
+# Load environment variables
+from dotenv import load_dotenv
+# Load environment variables from .env.local
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env.local'))
+
+# Django setup
 import django
 django.setup()
 
+# Import Django and Redis modules after Django setup
 import redis
 from django.conf import settings
-import time
-import logging
-from dotenv import load_dotenv
-
-# Load environment variables from .env.local
-load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env.local'))
+from django.core.cache import cache
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -143,7 +149,6 @@ def test_django_cache():
     
     try:
         # Try to import the cache module
-        from django.core.cache import cache
         logger.info(f"Django cache backend: {cache.__class__.__name__}")
         
         logger.info("Testing Django cache framework")
