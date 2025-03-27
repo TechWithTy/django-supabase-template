@@ -424,19 +424,18 @@ class TestSupabaseIntegration:
     
     def test_database_operations(self, check_supabase_resources, test_user_credentials):
         """Test database operations"""
-        # Skip if integration tests are disabled
-        if os.getenv("SKIP_INTEGRATION_TESTS", "true").lower() == "true":
-            pytest.skip("Integration tests disabled")
-            
+  
         # First authenticate to get an auth token
         auth_service = SupabaseAuthService()
         database_service = SupabaseDatabaseService()
         
-        email = test_user_credentials["email"]
-        password = test_user_credentials["password"]
+        # Get test user credentials from the fixture
+        email = test_user_credentials.get('email')
+        password = test_user_credentials.get('password')
         
+        # Sign in with the test user
         print(f"\nAttempting to sign in with email: {email}")
-        auth_result = auth_service.sign_in_with_password(email, password)
+        auth_result = auth_service.sign_in_with_email(email, password)
         
         auth_token = auth_result.get("access_token")
         assert auth_token is not None, "Failed to get authentication token"
@@ -471,7 +470,7 @@ class TestSupabaseIntegration:
                         table_exists = True
                     except Exception as create_error:
                         print(f"Failed to create test table: {str(create_error)}")
-                        pytest.skip(f"Could not create test table {test_table_name}. Error: {str(create_error)}")
+                        pytest.fail(f"Could not create test table {test_table_name}. Error: {str(create_error)}")
                 else:
                     raise
             
@@ -555,7 +554,8 @@ class TestSupabaseIntegration:
     
     def test_end_to_end_flow(self, check_supabase_resources, test_user_credentials, test_bucket_name, test_table_name):
         """Test an end-to-end flow combining authentication, database, and storage operations"""
-        # Skip if integration tests are disabled
+        
+        # Check if integration tests are enabled
         if os.getenv("SKIP_INTEGRATION_TESTS", "true").lower() == "true":
             pytest.skip("Integration tests disabled")
             
