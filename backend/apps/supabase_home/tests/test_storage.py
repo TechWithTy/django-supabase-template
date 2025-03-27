@@ -30,8 +30,8 @@ class TestSupabaseStorageService:
         """Test listing storage buckets"""
         # Configure mock response
         mock_make_request.return_value = [
-            {"id": "bucket1", "name": "Bucket 1", "public": True},
-            {"id": "bucket2", "name": "Bucket 2", "public": False},
+            {"id": "bucket1", "name": "Bucket 1"},
+            {"id": "bucket2", "name": "Bucket 2"},
         ]
 
         # Call list_buckets method
@@ -39,7 +39,10 @@ class TestSupabaseStorageService:
 
         # Verify request was made correctly
         mock_make_request.assert_called_once_with(
-            method="GET", endpoint="/storage/v1/bucket", auth_token="test-token"
+            method="GET", 
+            endpoint="/storage/v1/bucket", 
+            auth_token="test-token",
+            is_admin=False
         )
 
         # Verify result
@@ -53,7 +56,7 @@ class TestSupabaseStorageService:
         # Configure mock response
         mock_make_request.return_value = {
             "id": "new-bucket",
-            "name": "New Bucket",
+            "name": "new-bucket",
             "public": True,
         }
 
@@ -67,7 +70,8 @@ class TestSupabaseStorageService:
             method="POST",
             endpoint="/storage/v1/bucket",
             auth_token="test-token",
-            data={"id": "new-bucket", "public": True},
+            is_admin=True,
+            data={"name": "new-bucket", "public": True},
         )
 
         # Verify result
@@ -158,6 +162,8 @@ class TestSupabaseStorageService:
             method="DELETE",
             endpoint="/storage/v1/bucket/test-bucket",
             auth_token="test-token",
+            is_admin=False,
+            data={},
         )
 
     @patch.object(SupabaseStorageService, "_make_request")
@@ -378,3 +384,282 @@ class TestRealSupabaseStorageService:
                 storage_service.delete_bucket(bucket_id=test_bucket_name)
             except Exception as e:
                 pytest.fail(f"Failed to clean up bucket: {str(e)}")
+
+    @pytest.mark.skipif(
+        not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_ANON_KEY"),
+        reason="Supabase credentials not set in environment variables",
+    )
+    def test_real_end_to_end_storage_flow(self, storage_service):
+        """Comprehensive end-to-end test of all storage operations with real Supabase calls"""
+        # Skip if not using --integration flag
+        if os.getenv("SKIP_INTEGRATION_TESTS", "true").lower() == "true":
+            pytest.skip("Integration tests disabled - use --integration flag to run")
+        
+        # Generate unique test identifiers
+        test_bucket_name = f"test-bucket-{uuid.uuid4()}"
+        test_file_1_path = f"test-file-1-{uuid.uuid4()}.txt"
+        test_file_2_path = f"test-file-2-{uuid.uuid4()}.txt"
+        test_file_3_path = f"test-file-3-{uuid.uuid4()}.json"
+        test_nested_file_path = f"test-folder/nested-file-{uuid.uuid4()}.txt"
+        test_move_destination = f"moved-file-{uuid.uuid4()}.txt"
+        test_copy_destination = f"copied-file-{uuid.uuid4()}.txt"
+        
+        try:
+            print(f"\nRunning end-to-end storage test with bucket: {test_bucket_name}")
+            
+            # 1. Create a bucket
+            print("1. Creating bucket...")
+            create_result = storage_service.create_bucket(
+                bucket_id=test_bucket_name,
+                public=True,
+                file_size_limit=10 * 1024 * 1024,  # 10 MB
+                allowed_mime_types=["image/jpeg", "image/png", "text/plain", "application/json"]
+            )
+            
+            assert create_result is not None
+            assert create_result["id"] == test_bucket_name
+            assert create_result["public"] is True
+            print("✓ Bucket created successfully")
+            
+            # 2. Get the bucket details
+            print("2. Getting bucket details...")
+            get_result = storage_service.get_bucket(
+                bucket_id=test_bucket_name
+            )
+            
+            assert get_result is not None
+            assert get_result["id"] == test_bucket_name
+            assert get_result["public"] is True
+            print("✓ Bucket details retrieved successfully")
+            
+            # 3. Update the bucket
+            print("3. Updating bucket...")
+            update_result = storage_service.update_bucket(
+                bucket_id=test_bucket_name,
+                file_size_limit=5 * 1024 * 1024,  # 5 MB
+            )
+            
+            assert update_result is not None
+            assert update_result["id"] == test_bucket_name
+            assert update_result["file_size_limit"] == 5 * 1024 * 1024
+            print("✓ Bucket updated successfully")
+            
+            # 4. Upload multiple files
+            print("4. Uploading files...")
+            # Upload text file 1
+            file_1_content = f"Test file 1 content {uuid.uuid4()}"
+            file_1_data = io.BytesIO(file_1_content.encode())
+            
+            upload_result_1 = storage_service.upload_file(
+                bucket_id=test_bucket_name,
+                path=test_file_1_path,
+                file_data=file_1_data,
+                content_type="text/plain"
+            )
+            
+            assert upload_result_1 is not None
+            
+            # Upload text file 2
+            file_2_content = f"Test file 2 content {uuid.uuid4()}"
+            file_2_data = io.BytesIO(file_2_content.encode())
+            
+            upload_result_2 = storage_service.upload_file(
+                bucket_id=test_bucket_name,
+                path=test_file_2_path,
+                file_data=file_2_data,
+                content_type="text/plain"
+            )
+            
+            assert upload_result_2 is not None
+            
+            # Upload JSON file
+            json_content = f'{{"test": "data", "id": "{uuid.uuid4()}", "timestamp": "{uuid.uuid4()}"}}'.encode()
+            json_data = io.BytesIO(json_content)
+            
+            upload_result_3 = storage_service.upload_file(
+                bucket_id=test_bucket_name,
+                path=test_file_3_path,
+                file_data=json_data,
+                content_type="application/json"
+            )
+            
+            assert upload_result_3 is not None
+            
+            # Upload a file in a nested folder
+            nested_file_content = f"Nested file content {uuid.uuid4()}"
+            nested_file_data = io.BytesIO(nested_file_content.encode())
+            
+            upload_result_4 = storage_service.upload_file(
+                bucket_id=test_bucket_name,
+                path=test_nested_file_path,
+                file_data=nested_file_data,
+                content_type="text/plain"
+            )
+            
+            assert upload_result_4 is not None
+            print("✓ Files uploaded successfully")
+            
+            # 5. List files
+            print("5. Listing files...")
+            list_result = storage_service.list_files(
+                bucket_id=test_bucket_name
+            )
+            
+            assert list_result is not None
+            assert "items" in list_result
+            assert len(list_result["items"]) >= 4  # At least our 4 files
+            
+            # Verify all our files are in the list
+            file_names = [file["name"] for file in list_result["items"]]
+            assert test_file_1_path in file_names
+            assert test_file_2_path in file_names
+            assert test_file_3_path in file_names
+            assert test_nested_file_path in file_names
+            print("✓ Files listed successfully")
+            
+            # 6. Get public URLs
+            print("6. Getting public URLs...")
+            public_url_1 = storage_service.get_public_url(
+                bucket_id=test_bucket_name,
+                path=test_file_1_path
+            )
+            
+            assert public_url_1 is not None
+            assert test_bucket_name in public_url_1
+            assert test_file_1_path in public_url_1
+            print("✓ Public URL generated successfully")
+            
+            # 7. Create signed URL
+            print("7. Creating signed URL...")
+            signed_url = storage_service.create_signed_url(
+                bucket_id=test_bucket_name,
+                path=test_file_2_path,
+                expires_in=60  # 60 seconds
+            )
+            
+            assert signed_url is not None
+            assert "token" in signed_url
+            assert "signedURL" in signed_url
+            print("✓ Signed URL created successfully")
+            
+            # 8. Download a file
+            print("8. Downloading file...")
+            downloaded_content = storage_service.download_file(
+                bucket_id=test_bucket_name,
+                path=test_file_1_path
+            )
+            
+            assert downloaded_content is not None
+            assert downloaded_content.decode() == file_1_content
+            print("✓ File downloaded successfully")
+            
+            # 9. Move a file
+            print("9. Moving file...")
+            move_result = storage_service.move_file(
+                bucket_id=test_bucket_name,
+                source_path=test_file_2_path,
+                destination_path=test_move_destination
+            )
+            
+            assert move_result is not None
+            print("✓ File moved successfully")
+            
+            # 10. Copy a file
+            print("10. Copying file...")
+            copy_result = storage_service.copy_file(
+                bucket_id=test_bucket_name,
+                source_path=test_file_1_path,
+                destination_path=test_copy_destination
+            )
+            
+            assert copy_result is not None
+            print("✓ File copied successfully")
+            
+            # 11. List files again to verify move and copy operations
+            print("11. Verifying move and copy operations...")
+            list_result_after = storage_service.list_files(
+                bucket_id=test_bucket_name
+            )
+            
+            file_names_after = [file["name"] for file in list_result_after["items"]]
+            assert test_file_1_path in file_names_after  # Original still exists
+            assert test_move_destination in file_names_after  # Moved file exists
+            assert test_copy_destination in file_names_after  # Copied file exists
+            assert test_file_2_path not in file_names_after  # Original of moved file is gone
+            print("✓ Move and copy operations verified")
+            
+            # 12. Create a signed upload URL
+            print("12. Creating signed upload URL...")
+            signed_upload_url = storage_service.create_signed_upload_url(
+                bucket_id=test_bucket_name,
+                path=f"signed-upload-{uuid.uuid4()}.txt"
+            )
+            
+            assert signed_upload_url is not None
+            assert "token" in signed_upload_url
+            assert "signedURL" in signed_upload_url
+            print("✓ Signed upload URL created successfully")
+            
+            # 13. Delete individual files
+            print("13. Deleting individual files...")
+            delete_result = storage_service.delete_file(
+                bucket_id=test_bucket_name,
+                paths=[test_file_1_path, test_move_destination]
+            )
+            
+            assert delete_result is not None
+            print("✓ Files deleted successfully")
+            
+            # 14. Empty the bucket
+            print("14. Emptying bucket...")
+            empty_result = storage_service.empty_bucket(
+                bucket_id=test_bucket_name
+            )
+            
+            assert empty_result is not None
+            print("✓ Bucket emptied successfully")
+            
+            # 15. Verify bucket is empty
+            print("15. Verifying bucket is empty...")
+            list_result_empty = storage_service.list_files(
+                bucket_id=test_bucket_name
+            )
+            
+            assert list_result_empty is not None
+            assert "items" in list_result_empty
+            assert len(list_result_empty["items"]) == 0
+            print("✓ Bucket is empty")
+            
+            # 16. Delete the bucket
+            print("16. Deleting bucket...")
+            delete_bucket_result = storage_service.delete_bucket(
+                bucket_id=test_bucket_name
+            )
+            
+            assert delete_bucket_result is not None
+            print("✓ Bucket deleted successfully")
+            
+            # 17. Verify bucket is deleted by listing all buckets
+            print("17. Verifying bucket deletion...")
+            list_buckets_result = storage_service.list_buckets()
+            
+            bucket_ids = [bucket["id"] for bucket in list_buckets_result]
+            assert test_bucket_name not in bucket_ids
+            print("✓ Bucket deletion verified")
+            
+            print("\n✓✓✓ End-to-end storage test completed successfully ✓✓✓")
+            
+        except Exception as e:
+            # Clean up resources even if test fails
+            print(f"\n❌ Test failed: {str(e)}")
+            try:
+                # Try to clean up any remaining files
+                storage_service.empty_bucket(bucket_id=test_bucket_name)
+                # Try to delete the bucket
+                storage_service.delete_bucket(bucket_id=test_bucket_name)
+                print("✓ Cleanup completed after test failure")
+            except Exception as cleanup_error:
+                print(f"❌ Cleanup failed: {str(cleanup_error)}")
+            
+            # Re-raise the original exception
+            pytest.fail(f"Real-world end-to-end storage test failed: {str(e)}")
