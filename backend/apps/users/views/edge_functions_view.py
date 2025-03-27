@@ -7,7 +7,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 # Import the SupabaseEdgeFunctionsService directly
-from apps.supabase.edge_functions import SupabaseEdgeFunctionsService
+from apps.supabase_home.edge_functions import SupabaseEdgeFunctionsService
 
 # Initialize the edge functions service
 edge_functions_service = SupabaseEdgeFunctionsService()
@@ -18,12 +18,12 @@ edge_functions_service = SupabaseEdgeFunctionsService()
 def invoke_function(request: Request) -> Response:
     """
     Invoke a Supabase Edge Function.
-    
+
     Request body (for POST, PUT, PATCH):
     - function_name: Name of the function to invoke (required)
     - body: Optional request body to send to the function
     - headers: Optional additional headers to include
-    
+
     Query parameters (for GET, DELETE):
     - function_name: Name of the function to invoke (required)
     """
@@ -36,23 +36,27 @@ def invoke_function(request: Request) -> Response:
         function_name = request.query_params.get("function_name")
         body = None
         headers = None
-    
+
     if not function_name:
         return Response(
             {"error": "Function name is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     try:
         # Get auth token if available
-        auth_token = request.auth.token if hasattr(request, 'auth') and hasattr(request.auth, 'token') else None
-        
+        auth_token = (
+            request.auth.token
+            if hasattr(request, "auth") and hasattr(request.auth, "token")
+            else None
+        )
+
         response = edge_functions_service.invoke_function(
             function_name=function_name,
             invoke_method=request.method,
             body=body,
             headers=headers,
-            auth_token=auth_token
+            auth_token=auth_token,
         )
         return Response(response, status=status.HTTP_200_OK)
     except Exception as e:
@@ -67,7 +71,7 @@ def invoke_function(request: Request) -> Response:
 def list_functions(request: Request) -> Response:
     """
     List all available Edge Functions.
-    
+
     This is a placeholder endpoint since Supabase doesn't provide a direct API
     to list functions. In a real implementation, you might want to maintain a
     registry of functions in your database or fetch this information from
@@ -83,5 +87,5 @@ def list_functions(request: Request) -> Response:
         }
         # Add more functions as they become available
     ]
-    
+
     return Response(functions, status=status.HTTP_200_OK)

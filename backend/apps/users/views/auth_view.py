@@ -6,7 +6,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 # Import the SupabaseAuthService directly
-from apps.supabase.auth import (
+from apps.supabase_home.auth import (
     SupabaseAuthService,
     # Import specific functions from SupabaseAuthService
 )
@@ -15,6 +15,7 @@ from ..models import UserProfile
 from ..serializers import UserSerializer, UserProfileSerializer
 
 auth_service = SupabaseAuthService()
+
 
 @api_view(["POST"])
 def create_anonymous_user(request: Request) -> Response:

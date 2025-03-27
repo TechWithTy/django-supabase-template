@@ -1,12 +1,11 @@
 import json
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Optional
 
 import requests
 from django.conf import settings
-from django.core.cache import cache
 import logging
 
-logger = logging.getLogger("apps.supabase")
+logger = logging.getLogger(" apps.supabase_home")
 
 
 class SupabaseError(Exception):
@@ -46,14 +45,14 @@ class SupabaseService:
 
     def __init__(self):
         # Get configuration from settings
-        self.base_url = settings.SUPABASE_DB_CONNECTION_STRING
+        self.base_url = settings.SUPABASE_URL
         self.anon_key = settings.SUPABASE_ANON_KEY
         self.service_role_key = settings.SUPABASE_SERVICE_ROLE_KEY
 
         # Validate required settings
         if not self.base_url:
-            logger.error("SUPABASE_DB_CONNECTION_STRING is not set in settings")
-            raise ValueError("SUPABASE_DB_CONNECTION_STRING is not set in settings")
+            logger.error("SUPABASE_URL is not set in settings")
+            raise ValueError("SUPABASE_URL is not set in settings")
 
         if not self.anon_key:
             logger.error("SUPABASE_ANON_KEY is not set in settings")
@@ -133,6 +132,11 @@ class SupabaseService:
         request_headers = self._get_headers(auth_token, is_admin)
         if headers:
             request_headers.update(headers)
+
+        # Ensure data is not None for any requests with application/json content type
+        # Supabase API expects a valid JSON body (even if empty) when Content-Type is application/json
+        if data is None and 'Content-Type' in request_headers and request_headers['Content-Type'] == 'application/json':
+            data = {}
 
         try:
             logger.debug(f"Making {method} request to {url}")

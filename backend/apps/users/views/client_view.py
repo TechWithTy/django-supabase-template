@@ -7,7 +7,8 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 # Import the Supabase client
-from apps.supabase.client import supabase
+from apps.supabase_home.client import supabase
+
 
 # Database views
 @api_view(["GET"])
@@ -15,20 +16,20 @@ from apps.supabase.client import supabase
 def execute_query(request: Request) -> Response:
     """
     Execute a database query using the Supabase client.
-    
+
     Query parameters:
     - query: SQL query to execute
     - params: Optional parameters for the query
     """
     query = request.query_params.get("query")
     params = request.query_params.get("params", {})
-    
+
     if not query:
         return Response(
             {"error": "Query parameter is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     try:
         # Get the database service and execute the query
         db_service = supabase.get_database_service()
@@ -39,6 +40,7 @@ def execute_query(request: Request) -> Response:
             {"error": f"Failed to execute query: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
 
 # Storage views
 @api_view(["GET"])
@@ -57,6 +59,7 @@ def list_buckets(request: Request) -> Response:
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
+
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def create_bucket(request: Request) -> Response:
@@ -65,13 +68,13 @@ def create_bucket(request: Request) -> Response:
     """
     bucket_name = request.data.get("bucket_name")
     bucket_options = request.data.get("options", {})
-    
+
     if not bucket_name:
         return Response(
             {"error": "Bucket name is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     try:
         storage_service = supabase.get_storage_service()
         response = storage_service.create_bucket(bucket_name, bucket_options)
@@ -82,6 +85,7 @@ def create_bucket(request: Request) -> Response:
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
+
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
 def list_objects(request: Request) -> Response:
@@ -90,13 +94,13 @@ def list_objects(request: Request) -> Response:
     """
     bucket_name = request.query_params.get("bucket_name")
     path = request.query_params.get("path", "")
-    
+
     if not bucket_name:
         return Response(
             {"error": "Bucket name is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     try:
         storage_service = supabase.get_storage_service()
         response = storage_service.list_objects(bucket_name, path)
@@ -107,6 +111,7 @@ def list_objects(request: Request) -> Response:
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
+
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def upload_file(request: Request) -> Response:
@@ -116,13 +121,13 @@ def upload_file(request: Request) -> Response:
     bucket_name = request.data.get("bucket_name")
     file_path = request.data.get("file_path")
     file = request.FILES.get("file")
-    
+
     if not bucket_name or not file_path or not file:
         return Response(
             {"error": "Bucket name, file path, and file are required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     try:
         storage_service = supabase.get_storage_service()
         response = storage_service.upload(bucket_name, file_path, file)
@@ -133,6 +138,7 @@ def upload_file(request: Request) -> Response:
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
+
 @api_view(["DELETE"])
 @permission_classes([permissions.IsAuthenticated])
 def delete_file(request: Request) -> Response:
@@ -141,13 +147,13 @@ def delete_file(request: Request) -> Response:
     """
     bucket_name = request.data.get("bucket_name")
     file_path = request.data.get("file_path")
-    
+
     if not bucket_name or not file_path:
         return Response(
             {"error": "Bucket name and file path are required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     try:
         storage_service = supabase.get_storage_service()
         response = storage_service.delete(bucket_name, [file_path])
@@ -158,6 +164,7 @@ def delete_file(request: Request) -> Response:
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
+
 # Edge Functions views
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
@@ -167,13 +174,13 @@ def invoke_edge_function(request: Request) -> Response:
     """
     function_name = request.data.get("function_name")
     invoke_options = request.data.get("options", {})
-    
+
     if not function_name:
         return Response(
             {"error": "Function name is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     try:
         edge_functions_service = supabase.get_edge_functions_service()
         response = edge_functions_service.invoke(function_name, invoke_options)
@@ -183,6 +190,7 @@ def invoke_edge_function(request: Request) -> Response:
             {"error": f"Failed to invoke edge function: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
 
 # Realtime views
 @api_view(["POST"])
@@ -194,21 +202,21 @@ def subscribe_to_channel(request: Request) -> Response:
     Actual subscription should be handled on the client side.
     """
     channel_name = request.data.get("channel_name")
-    
+
     if not channel_name:
         return Response(
             {"error": "Channel name is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     try:
         # This is just informational - actual subscription happens client-side
         return Response(
             {
                 "message": f"To subscribe to channel '{channel_name}', use the Supabase client in your frontend application.",
-                "example": f"const channel = supabase.channel('{channel_name}').subscribe()"
+                "example": f"const channel = supabase.channel('{channel_name}').subscribe()",
             },
-            status=status.HTTP_200_OK
+            status=status.HTTP_200_OK,
         )
     except Exception as e:
         return Response(

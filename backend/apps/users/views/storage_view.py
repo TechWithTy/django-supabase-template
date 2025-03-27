@@ -10,7 +10,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 # Import the SupabaseStorageService directly
-from apps.supabase.storage import SupabaseStorageService
+from apps.supabase_home.storage import SupabaseStorageService
 
 # Initialize the storage service
 storage_service = SupabaseStorageService()
@@ -22,7 +22,7 @@ storage_service = SupabaseStorageService()
 def create_bucket(request: Request) -> Response:
     """
     Create a new storage bucket.
-    
+
     Request body:
     - bucket_id: Bucket identifier (required)
     - public: Whether the bucket is publicly accessible (default: false)
@@ -33,23 +33,27 @@ def create_bucket(request: Request) -> Response:
     public = request.data.get("public", False)
     file_size_limit = request.data.get("file_size_limit")
     allowed_mime_types = request.data.get("allowed_mime_types")
-    
+
     if not bucket_id:
         return Response(
             {"error": "Bucket ID is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     try:
         # Get auth token if available
-        auth_token = request.auth.token if hasattr(request, 'auth') and hasattr(request.auth, 'token') else None
-        
+        auth_token = (
+            request.auth.token
+            if hasattr(request, "auth") and hasattr(request.auth, "token")
+            else None
+        )
+
         response = storage_service.create_bucket(
             bucket_id=bucket_id,
             public=public,
             file_size_limit=file_size_limit,
             allowed_mime_types=allowed_mime_types,
-            auth_token=auth_token
+            auth_token=auth_token,
         )
         return Response(response, status=status.HTTP_201_CREATED)
     except Exception as e:
@@ -64,25 +68,28 @@ def create_bucket(request: Request) -> Response:
 def get_bucket(request: Request) -> Response:
     """
     Retrieve a bucket by ID.
-    
+
     Query parameters:
     - bucket_id: Bucket identifier (required)
     """
     bucket_id = request.query_params.get("bucket_id")
-    
+
     if not bucket_id:
         return Response(
             {"error": "Bucket ID is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     try:
         # Get auth token if available
-        auth_token = request.auth.token if hasattr(request, 'auth') and hasattr(request.auth, 'token') else None
-        
+        auth_token = (
+            request.auth.token
+            if hasattr(request, "auth") and hasattr(request.auth, "token")
+            else None
+        )
+
         response = storage_service.get_bucket(
-            bucket_id=bucket_id,
-            auth_token=auth_token
+            bucket_id=bucket_id, auth_token=auth_token
         )
         return Response(response, status=status.HTTP_200_OK)
     except Exception as e:
@@ -100,8 +107,12 @@ def list_buckets(request: Request) -> Response:
     """
     try:
         # Get auth token if available
-        auth_token = request.auth.token if hasattr(request, 'auth') and hasattr(request.auth, 'token') else None
-        
+        auth_token = (
+            request.auth.token
+            if hasattr(request, "auth") and hasattr(request.auth, "token")
+            else None
+        )
+
         response = storage_service.list_buckets(auth_token=auth_token)
         return Response(response, status=status.HTTP_200_OK)
     except Exception as e:
@@ -116,7 +127,7 @@ def list_buckets(request: Request) -> Response:
 def update_bucket(request: Request) -> Response:
     """
     Update a bucket.
-    
+
     Request body:
     - bucket_id: Bucket identifier (required)
     - public: Whether the bucket is publicly accessible
@@ -127,23 +138,27 @@ def update_bucket(request: Request) -> Response:
     public = request.data.get("public")
     file_size_limit = request.data.get("file_size_limit")
     allowed_mime_types = request.data.get("allowed_mime_types")
-    
+
     if not bucket_id:
         return Response(
             {"error": "Bucket ID is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     try:
         # Get auth token if available
-        auth_token = request.auth.token if hasattr(request, 'auth') and hasattr(request.auth, 'token') else None
-        
+        auth_token = (
+            request.auth.token
+            if hasattr(request, "auth") and hasattr(request.auth, "token")
+            else None
+        )
+
         response = storage_service.update_bucket(
             bucket_id=bucket_id,
             public=public,
             file_size_limit=file_size_limit,
             allowed_mime_types=allowed_mime_types,
-            auth_token=auth_token
+            auth_token=auth_token,
         )
         return Response(response, status=status.HTTP_200_OK)
     except Exception as e:
@@ -158,25 +173,28 @@ def update_bucket(request: Request) -> Response:
 def delete_bucket(request: Request) -> Response:
     """
     Delete a bucket.
-    
+
     Query parameters:
     - bucket_id: Bucket identifier (required)
     """
     bucket_id = request.query_params.get("bucket_id")
-    
+
     if not bucket_id:
         return Response(
             {"error": "Bucket ID is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     try:
         # Get auth token if available
-        auth_token = request.auth.token if hasattr(request, 'auth') and hasattr(request.auth, 'token') else None
-        
+        auth_token = (
+            request.auth.token
+            if hasattr(request, "auth") and hasattr(request.auth, "token")
+            else None
+        )
+
         response = storage_service.delete_bucket(
-            bucket_id=bucket_id,
-            auth_token=auth_token
+            bucket_id=bucket_id, auth_token=auth_token
         )
         return Response(response, status=status.HTTP_200_OK)
     except Exception as e:
@@ -191,25 +209,28 @@ def delete_bucket(request: Request) -> Response:
 def empty_bucket(request: Request) -> Response:
     """
     Empty a bucket (delete all files).
-    
+
     Request body:
     - bucket_id: Bucket identifier (required)
     """
     bucket_id = request.data.get("bucket_id")
-    
+
     if not bucket_id:
         return Response(
             {"error": "Bucket ID is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     try:
         # Get auth token if available
-        auth_token = request.auth.token if hasattr(request, 'auth') and hasattr(request.auth, 'token') else None
-        
+        auth_token = (
+            request.auth.token
+            if hasattr(request, "auth") and hasattr(request.auth, "token")
+            else None
+        )
+
         response = storage_service.empty_bucket(
-            bucket_id=bucket_id,
-            auth_token=auth_token
+            bucket_id=bucket_id, auth_token=auth_token
         )
         return Response(response, status=status.HTTP_200_OK)
     except Exception as e:
@@ -226,15 +247,15 @@ def empty_bucket(request: Request) -> Response:
 def upload_file(request: Request) -> Response:
     """
     Upload a file to a bucket.
-    
+
     Request body (multipart/form-data):
     - bucket_id: Bucket identifier (required)
     - path: File path within the bucket (required)
     - file: File data (required)
     - content_type: MIME type of the file (optional)
-    
+
     OR
-    
+
     Request body (application/json):
     - bucket_id: Bucket identifier (required)
     - path: File path within the bucket (required)
@@ -244,27 +265,31 @@ def upload_file(request: Request) -> Response:
     bucket_id = request.data.get("bucket_id")
     path = request.data.get("path")
     content_type = request.data.get("content_type")
-    
+
     if not bucket_id or not path:
         return Response(
             {"error": "Bucket ID and path are required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     # Check if file is uploaded as multipart form or as base64 data
     file = request.FILES.get("file")
     file_data = request.data.get("file_data")
-    
+
     if not file and not file_data:
         return Response(
             {"error": "File or file_data is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     try:
         # Get auth token if available
-        auth_token = request.auth.token if hasattr(request, 'auth') and hasattr(request.auth, 'token') else None
-        
+        auth_token = (
+            request.auth.token
+            if hasattr(request, "auth") and hasattr(request.auth, "token")
+            else None
+        )
+
         if file:
             # Handle multipart form upload
             file_content = file.read()
@@ -279,13 +304,13 @@ def upload_file(request: Request) -> Response:
                     {"error": "Invalid base64 data"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-        
+
         response = storage_service.upload_file(
             bucket_id=bucket_id,
             path=path,
             file_data=file_content,
             content_type=content_type,
-            auth_token=auth_token
+            auth_token=auth_token,
         )
         return Response(response, status=status.HTTP_201_CREATED)
     except Exception as e:
@@ -300,40 +325,46 @@ def upload_file(request: Request) -> Response:
 def download_file(request: Request) -> Response:
     """
     Download a file from a bucket.
-    
+
     Query parameters:
     - bucket_id: Bucket identifier (required)
     - path: File path within the bucket (required)
     """
     bucket_id = request.query_params.get("bucket_id")
     path = request.query_params.get("path")
-    
+
     if not bucket_id or not path:
         return Response(
             {"error": "Bucket ID and path are required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     try:
         # Get auth token if available
-        auth_token = request.auth.token if hasattr(request, 'auth') and hasattr(request.auth, 'token') else None
-        
-        file_content = storage_service.download_file(
-            bucket_id=bucket_id,
-            path=path,
-            auth_token=auth_token
+        auth_token = (
+            request.auth.token
+            if hasattr(request, "auth") and hasattr(request.auth, "token")
+            else None
         )
-        
+
+        file_content = storage_service.download_file(
+            bucket_id=bucket_id, path=path, auth_token=auth_token
+        )
+
         # Try to determine content type from file extension
         import mimetypes
+
         content_type, _ = mimetypes.guess_type(path)
         if not content_type:
             content_type = "application/octet-stream"
-        
+
         return Response(
             file_content,
             status=status.HTTP_200_OK,
-            headers={"Content-Type": content_type, "Content-Disposition": f"attachment; filename={path.split('/')[-1]}"}
+            headers={
+                "Content-Type": content_type,
+                "Content-Disposition": f"attachment; filename={path.split('/')[-1]}",
+            },
         )
     except Exception as e:
         return Response(
@@ -347,7 +378,7 @@ def download_file(request: Request) -> Response:
 def list_files(request: Request) -> Response:
     """
     List files in a bucket.
-    
+
     Request body:
     - bucket_id: Bucket identifier (required)
     - path: Path prefix to filter files (default: "")
@@ -360,24 +391,28 @@ def list_files(request: Request) -> Response:
     limit = request.data.get("limit", 100)
     offset = request.data.get("offset", 0)
     sort_by = request.data.get("sort_by")
-    
+
     if not bucket_id:
         return Response(
             {"error": "Bucket ID is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     try:
         # Get auth token if available
-        auth_token = request.auth.token if hasattr(request, 'auth') and hasattr(request.auth, 'token') else None
-        
+        auth_token = (
+            request.auth.token
+            if hasattr(request, "auth") and hasattr(request.auth, "token")
+            else None
+        )
+
         response = storage_service.list_files(
             bucket_id=bucket_id,
             path=path,
             limit=limit,
             offset=offset,
             sort_by=sort_by,
-            auth_token=auth_token
+            auth_token=auth_token,
         )
         return Response(response, status=status.HTTP_200_OK)
     except Exception as e:
@@ -392,7 +427,7 @@ def list_files(request: Request) -> Response:
 def move_file(request: Request) -> Response:
     """
     Move a file to a new location.
-    
+
     Request body:
     - bucket_id: Bucket identifier (required)
     - source_path: Current file path (required)
@@ -401,22 +436,26 @@ def move_file(request: Request) -> Response:
     bucket_id = request.data.get("bucket_id")
     source_path = request.data.get("source_path")
     destination_path = request.data.get("destination_path")
-    
+
     if not bucket_id or not source_path or not destination_path:
         return Response(
             {"error": "Bucket ID, source path, and destination path are required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     try:
         # Get auth token if available
-        auth_token = request.auth.token if hasattr(request, 'auth') and hasattr(request.auth, 'token') else None
-        
+        auth_token = (
+            request.auth.token
+            if hasattr(request, "auth") and hasattr(request.auth, "token")
+            else None
+        )
+
         response = storage_service.move_file(
             bucket_id=bucket_id,
             source_path=source_path,
             destination_path=destination_path,
-            auth_token=auth_token
+            auth_token=auth_token,
         )
         return Response(response, status=status.HTTP_200_OK)
     except Exception as e:
@@ -431,7 +470,7 @@ def move_file(request: Request) -> Response:
 def copy_file(request: Request) -> Response:
     """
     Copy a file to a new location.
-    
+
     Request body:
     - bucket_id: Bucket identifier (required)
     - source_path: Source file path (required)
@@ -440,22 +479,26 @@ def copy_file(request: Request) -> Response:
     bucket_id = request.data.get("bucket_id")
     source_path = request.data.get("source_path")
     destination_path = request.data.get("destination_path")
-    
+
     if not bucket_id or not source_path or not destination_path:
         return Response(
             {"error": "Bucket ID, source path, and destination path are required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     try:
         # Get auth token if available
-        auth_token = request.auth.token if hasattr(request, 'auth') and hasattr(request.auth, 'token') else None
-        
+        auth_token = (
+            request.auth.token
+            if hasattr(request, "auth") and hasattr(request.auth, "token")
+            else None
+        )
+
         response = storage_service.copy_file(
             bucket_id=bucket_id,
             source_path=source_path,
             destination_path=destination_path,
-            auth_token=auth_token
+            auth_token=auth_token,
         )
         return Response(response, status=status.HTTP_200_OK)
     except Exception as e:
@@ -470,13 +513,13 @@ def copy_file(request: Request) -> Response:
 def delete_file(request: Request) -> Response:
     """
     Delete files from a bucket.
-    
+
     Query parameters (for single file):
     - bucket_id: Bucket identifier (required)
     - path: File path (required if paths not provided in body)
-    
+
     OR
-    
+
     Request body (for multiple files):
     - bucket_id: Bucket identifier (required)
     - paths: List of file paths to delete (required if path not provided in query)
@@ -485,31 +528,33 @@ def delete_file(request: Request) -> Response:
     bucket_id = request.query_params.get("bucket_id") or request.data.get("bucket_id")
     path = request.query_params.get("path")
     paths = request.data.get("paths")
-    
+
     if not bucket_id:
         return Response(
             {"error": "Bucket ID is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     if not path and not paths:
         return Response(
             {"error": "Either path or paths must be provided"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     # If path is provided in query params, use it
     if path:
         paths = path
-    
+
     try:
         # Get auth token if available
-        auth_token = request.auth.token if hasattr(request, 'auth') and hasattr(request.auth, 'token') else None
-        
+        auth_token = (
+            request.auth.token
+            if hasattr(request, "auth") and hasattr(request.auth, "token")
+            else None
+        )
+
         response = storage_service.delete_file(
-            bucket_id=bucket_id,
-            paths=paths,
-            auth_token=auth_token
+            bucket_id=bucket_id, paths=paths, auth_token=auth_token
         )
         return Response(response, status=status.HTTP_200_OK)
     except Exception as e:
@@ -525,7 +570,7 @@ def delete_file(request: Request) -> Response:
 def create_signed_url(request: Request) -> Response:
     """
     Create a signed URL for a file.
-    
+
     Request body:
     - bucket_id: Bucket identifier (required)
     - path: File path (required)
@@ -534,22 +579,23 @@ def create_signed_url(request: Request) -> Response:
     bucket_id = request.data.get("bucket_id")
     path = request.data.get("path")
     expires_in = request.data.get("expires_in", 60)
-    
+
     if not bucket_id or not path:
         return Response(
             {"error": "Bucket ID and path are required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     try:
         # Get auth token if available
-        auth_token = request.auth.token if hasattr(request, 'auth') and hasattr(request.auth, 'token') else None
-        
+        auth_token = (
+            request.auth.token
+            if hasattr(request, "auth") and hasattr(request.auth, "token")
+            else None
+        )
+
         response = storage_service.create_signed_url(
-            bucket_id=bucket_id,
-            path=path,
-            expires_in=expires_in,
-            auth_token=auth_token
+            bucket_id=bucket_id, path=path, expires_in=expires_in, auth_token=auth_token
         )
         return Response(response, status=status.HTTP_200_OK)
     except Exception as e:
@@ -564,7 +610,7 @@ def create_signed_url(request: Request) -> Response:
 def create_signed_urls(request: Request) -> Response:
     """
     Create signed URLs for multiple files.
-    
+
     Request body:
     - bucket_id: Bucket identifier (required)
     - paths: List of file paths (required)
@@ -573,22 +619,26 @@ def create_signed_urls(request: Request) -> Response:
     bucket_id = request.data.get("bucket_id")
     paths = request.data.get("paths")
     expires_in = request.data.get("expires_in", 60)
-    
+
     if not bucket_id or not paths or not isinstance(paths, list):
         return Response(
             {"error": "Bucket ID and paths (as a list) are required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     try:
         # Get auth token if available
-        auth_token = request.auth.token if hasattr(request, 'auth') and hasattr(request.auth, 'token') else None
-        
+        auth_token = (
+            request.auth.token
+            if hasattr(request, "auth") and hasattr(request.auth, "token")
+            else None
+        )
+
         response = storage_service.create_signed_urls(
             bucket_id=bucket_id,
             paths=paths,
             expires_in=expires_in,
-            auth_token=auth_token
+            auth_token=auth_token,
         )
         return Response(response, status=status.HTTP_200_OK)
     except Exception as e:
@@ -603,28 +653,30 @@ def create_signed_urls(request: Request) -> Response:
 def create_signed_upload_url(request: Request) -> Response:
     """
     Create a signed URL for uploading a file.
-    
+
     Request body:
     - bucket_id: Bucket identifier (required)
     - path: File path (required)
     """
     bucket_id = request.data.get("bucket_id")
     path = request.data.get("path")
-    
+
     if not bucket_id or not path:
         return Response(
             {"error": "Bucket ID and path are required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     try:
         # Get auth token if available
-        auth_token = request.auth.token if hasattr(request, 'auth') and hasattr(request.auth, 'token') else None
-        
+        auth_token = (
+            request.auth.token
+            if hasattr(request, "auth") and hasattr(request.auth, "token")
+            else None
+        )
+
         response = storage_service.create_signed_upload_url(
-            bucket_id=bucket_id,
-            path=path,
-            auth_token=auth_token
+            bucket_id=bucket_id, path=path, auth_token=auth_token
         )
         return Response(response, status=status.HTTP_200_OK)
     except Exception as e:
@@ -640,14 +692,14 @@ def create_signed_upload_url(request: Request) -> Response:
 def upload_to_signed_url(request: Request) -> Response:
     """
     Upload a file to a signed URL.
-    
+
     Request body (multipart/form-data):
     - signed_url: Signed URL for upload (required)
     - file: File data (required)
     - content_type: MIME type of the file (optional)
-    
+
     OR
-    
+
     Request body (application/json):
     - signed_url: Signed URL for upload (required)
     - file_data: Base64-encoded file data (required)
@@ -655,23 +707,23 @@ def upload_to_signed_url(request: Request) -> Response:
     """
     signed_url = request.data.get("signed_url")
     content_type = request.data.get("content_type")
-    
+
     if not signed_url:
         return Response(
             {"error": "Signed URL is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     # Check if file is uploaded as multipart form or as base64 data
     file = request.FILES.get("file")
     file_data = request.data.get("file_data")
-    
+
     if not file and not file_data:
         return Response(
             {"error": "File or file_data is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     try:
         if file:
             # Handle multipart form upload
@@ -687,13 +739,13 @@ def upload_to_signed_url(request: Request) -> Response:
                     {"error": "Invalid base64 data"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-        
+
         storage_service.upload_to_signed_url(
-            signed_url=signed_url,
-            file_data=file_content,
-            content_type=content_type
+            signed_url=signed_url, file_data=file_content, content_type=content_type
         )
-        return Response({"message": "File uploaded successfully"}, status=status.HTTP_200_OK)
+        return Response(
+            {"message": "File uploaded successfully"}, status=status.HTTP_200_OK
+        )
     except Exception as e:
         return Response(
             {"error": f"Failed to upload file to signed URL: {str(e)}"},
@@ -706,25 +758,22 @@ def upload_to_signed_url(request: Request) -> Response:
 def get_public_url(request: Request) -> Response:
     """
     Get the public URL for a file in a public bucket.
-    
+
     Query parameters:
     - bucket_id: Bucket identifier (required)
     - path: File path (required)
     """
     bucket_id = request.query_params.get("bucket_id")
     path = request.query_params.get("path")
-    
+
     if not bucket_id or not path:
         return Response(
             {"error": "Bucket ID and path are required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     try:
-        public_url = storage_service.get_public_url(
-            bucket_id=bucket_id,
-            path=path
-        )
+        public_url = storage_service.get_public_url(bucket_id=bucket_id, path=path)
         return Response({"url": public_url}, status=status.HTTP_200_OK)
     except Exception as e:
         return Response(

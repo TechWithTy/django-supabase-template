@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 from ._service import SupabaseService
 
@@ -403,4 +403,36 @@ class SupabaseAuthService(SupabaseService):
             method="GET",
             endpoint=f"/auth/v1/admin/users?page={page}&per_page={per_page}",
             is_admin=True,
+        )
+
+    def admin_create_user(
+        self,
+        email: str,
+        password: str,
+        user_metadata: Optional[Dict[str, Any]] = None,
+        email_confirm: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Create a new user with admin privileges (bypassing email verification if needed).
+
+        Args:
+            email: User's email address
+            password: User's password
+            user_metadata: Optional metadata for the user
+            email_confirm: Whether to auto-confirm the user's email
+
+        Returns:
+            User data
+        """
+        data = {
+            "email": email,
+            "password": password,
+            "email_confirm": email_confirm,
+        }
+
+        if user_metadata:
+            data["user_metadata"] = user_metadata
+
+        return self._make_request(
+            method="POST", endpoint="/auth/v1/admin/users", is_admin=True, data=data
         )

@@ -185,3 +185,77 @@ class SupabaseDatabaseService(SupabaseService):
             auth_token=auth_token,
             data=params or {}
         )
+
+    def create_test_table(self,
+                       table: str,
+                       auth_token: Optional[str] = None,
+                       is_admin: bool = True) -> Dict[str, Any]:
+        """
+        Create a simple test table for integration tests.
+        
+        Args:
+            table: Table name to create
+            auth_token: Optional JWT token for authenticated requests
+            is_admin: Whether to use service role key (admin access)
+            
+        Returns:
+            Response from the API
+        """
+        # SQL to create a simple test table
+        sql = f"""
+        CREATE TABLE IF NOT EXISTS {table} (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            user_id TEXT
+        );
+        
+        -- Set up RLS policies
+        ALTER TABLE {table} ENABLE ROW LEVEL SECURITY;
+        
+        -- Create policy to allow all operations for authenticated users
+        DROP POLICY IF EXISTS "Allow all operations for authenticated users" ON {table};
+        CREATE POLICY "Allow all operations for authenticated users"
+        ON {table}
+        FOR ALL
+        TO authenticated
+        USING (true)
+        WITH CHECK (true);
+        """
+        
+        # Execute the SQL using the rpc endpoint
+        return self._make_request(
+            method="POST",
+            endpoint="/rest/v1/rpc/exec_sql",
+            auth_token=auth_token,
+            is_admin=is_admin,  # Must use admin privileges to create tables
+            data={"query": sql}
+        )
+
+    def delete_table(self,
+                    table: str,
+                    auth_token: Optional[str] = None,
+                    is_admin: bool = True) -> Dict[str, Any]:
+        """
+        Delete a table from the database.
+        
+        Args:
+            table: Table name to delete
+            auth_token: Optional JWT token for authenticated requests
+            is_admin: Whether to use service role key (admin access)
+            
+        Returns:
+            Response from the API
+        """
+        # SQL to drop the table
+        sql = f"DROP TABLE IF EXISTS {table};"
+        
+        # Execute the SQL using the rpc endpoint
+        return self._make_request(
+            method="POST",
+            endpoint="/rest/v1/rpc/exec_sql",
+            auth_token=auth_token,
+            is_admin=is_admin,  # Must use admin privileges to delete tables
+            data={"query": sql}
+        )

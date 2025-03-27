@@ -9,7 +9,7 @@ import logging
 from .models import UserData
 
 # Import the SupabaseAuthService directly
-from apps.supabase.auth import SupabaseAuthService
+from apps.supabase_home.auth import SupabaseAuthService
 
 User = get_user_model()
 logger = logging.getLogger("apps.authentication")

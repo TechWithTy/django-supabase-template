@@ -14,8 +14,8 @@ logging.basicConfig(
 logger = logging.getLogger("supabase_test")
 
 # Import our Supabase client
-from apps.supabase.client import supabase
-from apps.supabase.init import get_supabase_client
+from apps.supabase_home.client import supabase
+from apps.supabase_home.init import get_supabase_client
 from django.conf import settings
 
 
