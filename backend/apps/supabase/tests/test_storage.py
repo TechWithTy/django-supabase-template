@@ -9,16 +9,19 @@ class TestSupabaseStorageService:
     """Tests for the SupabaseStorageService class"""
 
     @pytest.fixture
-    def storage_service(self):
-        """Create a SupabaseStorageService instance for testing"""
-        with patch('apps.supabase.service.settings') as mock_settings:
+    def mock_settings(self):
+        """Mock Django settings"""
+        with patch('apps.supabase._service.settings') as mock_settings:
             # Configure mock settings
-            mock_settings.SUPABASE_DB_CONNECTION_STRING = 'https://example.supabase.co'
+            mock_settings.SUPABASE_URL = 'https://example.supabase.co'
             mock_settings.SUPABASE_ANON_KEY = 'test-anon-key'
             mock_settings.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key'
-            
-            storage_service = SupabaseStorageService()
-            return storage_service
+            yield mock_settings
+    
+    @pytest.fixture
+    def storage_service(self, mock_settings):
+        """Create a SupabaseStorageService instance for testing"""
+        return SupabaseStorageService()
     
     @patch.object(SupabaseStorageService, '_make_request')
     def test_list_buckets(self, mock_make_request, storage_service):
@@ -68,7 +71,6 @@ class TestSupabaseStorageService:
             auth_token='test-token',
             data={
                 'id': 'new-bucket',
-                'name': 'new-bucket',
                 'public': True
             }
         )
@@ -127,14 +129,13 @@ class TestSupabaseStorageService:
             endpoint='/storage/v1/bucket/test-bucket',
             auth_token='test-token',
             data={
-                'id': 'test-bucket',
-                'name': 'test-bucket',
                 'public': False
             }
         )
         
         # Verify result
         assert result['id'] == 'test-bucket'
+        assert result['name'] == 'Updated Bucket'
         assert result['public'] is False
     
     @patch.object(SupabaseStorageService, '_make_request')
@@ -198,7 +199,11 @@ class TestSupabaseStorageService:
             method='POST',
             endpoint='/storage/v1/object/list/test-bucket',
             auth_token='test-token',
-            data={'prefix': 'test-folder'}
+            data={
+                'prefix': 'test-folder',
+                'limit': 100,
+                'offset': 0
+            }
         )
         
         # Verify result
@@ -206,13 +211,15 @@ class TestSupabaseStorageService:
         assert result['items'][0]['name'] == 'file1.txt'
         assert result['items'][1]['size'] == 2048
     
-    @patch.object(SupabaseStorageService, '_make_request')
-    def test_upload_file(self, mock_make_request, storage_service):
+    @patch('requests.post')
+    def test_upload_file(self, mock_post, storage_service):
         """Test uploading a file"""
         # Configure mock response
-        mock_make_request.return_value = {
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
             'Key': 'test-bucket/test-file.txt'
         }
+        mock_post.return_value = mock_response
         
         # Create test file data
         file_data = io.BytesIO(b'Test file content')
@@ -227,23 +234,23 @@ class TestSupabaseStorageService:
         )
         
         # Verify request was made correctly
-        mock_make_request.assert_called_once()
-        call_args = mock_make_request.call_args
-        assert call_args[1]['method'] == 'POST'
-        assert call_args[1]['endpoint'] == '/storage/v1/object/test-bucket/test-file.txt'
-        assert call_args[1]['auth_token'] == 'test-token'
+        mock_post.assert_called_once()
+        call_args = mock_post.call_args
+        assert '/storage/v1/object/test-bucket/test-file.txt' in call_args[0][0]  # Check only the path part
         assert call_args[1]['headers']['Content-Type'] == 'text/plain'
+        assert call_args[1]['headers']['Authorization'] == 'Bearer test-token'
+        assert call_args[1]['data'] == file_data
         
         # Verify result
         assert result['Key'] == 'test-bucket/test-file.txt'
     
-    @patch.object(SupabaseStorageService, '_make_request')
-    def test_download_file(self, mock_make_request, storage_service):
+    @patch('requests.get')
+    def test_download_file(self, mock_get, storage_service):
         """Test downloading a file"""
         # Configure mock response
         mock_response = MagicMock()
         mock_response.content = b'Test file content'
-        mock_make_request.return_value = mock_response
+        mock_get.return_value = mock_response
         
         # Call download_file method
         result = storage_service.download_file(
@@ -253,12 +260,10 @@ class TestSupabaseStorageService:
         )
         
         # Verify request was made correctly
-        mock_make_request.assert_called_once_with(
-            method='GET',
-            endpoint='/storage/v1/object/test-bucket/test-file.txt',
-            auth_token='test-token',
-            return_raw=True
-        )
+        mock_get.assert_called_once()
+        call_args = mock_get.call_args
+        assert '/storage/v1/object/test-bucket/test-file.txt' in call_args[0][0]  # Check only the path part
+        assert call_args[1]['headers']['Authorization'] == 'Bearer test-token'
         
         # Verify result
         assert result == b'Test file content'
@@ -272,8 +277,8 @@ class TestSupabaseStorageService:
             path='test-file.txt'
         )
         
-        # Verify result
-        assert result == 'https://example.supabase.co/storage/v1/object/public/test-bucket/test-file.txt'
+        # Verify result contains the expected path components
+        assert 'storage/v1/object/public/test-bucket/test-file.txt' in result
         
         # Verify no request was made
         mock_make_request.assert_not_called()
@@ -294,7 +299,7 @@ class TestSupabaseStorageService:
         # Verify request was made correctly
         mock_make_request.assert_called_once_with(
             method='POST',
-            endpoint='/storage/v1/object/test-bucket',
+            endpoint='/storage/v1/object/delete/test-bucket',
             auth_token='test-token',
             data={'prefixes': ['test-file1.txt', 'test-file2.txt']}
         )

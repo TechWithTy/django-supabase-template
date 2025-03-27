@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from ..realtime import SupabaseRealtimeService
 
@@ -8,16 +8,19 @@ class TestSupabaseRealtimeService:
     """Tests for the SupabaseRealtimeService class"""
 
     @pytest.fixture
-    def realtime_service(self):
-        """Create a SupabaseRealtimeService instance for testing"""
-        with patch('apps.supabase.service.settings') as mock_settings:
+    def mock_settings(self):
+        """Mock Django settings"""
+        with patch('apps.supabase._service.settings') as mock_settings:
             # Configure mock settings
-            mock_settings.SUPABASE_DB_CONNECTION_STRING = 'https://example.supabase.co'
+            mock_settings.SUPABASE_URL = 'https://example.supabase.co'
             mock_settings.SUPABASE_ANON_KEY = 'test-anon-key'
             mock_settings.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key'
-            
-            realtime_service = SupabaseRealtimeService()
-            return realtime_service
+            yield mock_settings
+    
+    @pytest.fixture
+    def realtime_service(self, mock_settings):
+        """Create a SupabaseRealtimeService instance for testing"""
+        return SupabaseRealtimeService()
     
     @patch.object(SupabaseRealtimeService, '_make_request')
     def test_get_channels(self, mock_make_request, realtime_service):

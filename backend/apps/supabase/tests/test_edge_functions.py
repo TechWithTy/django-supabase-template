@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from ..edge_functions import SupabaseEdgeFunctionsService
 
@@ -8,16 +8,19 @@ class TestSupabaseEdgeFunctionsService:
     """Tests for the SupabaseEdgeFunctionsService class"""
 
     @pytest.fixture
-    def edge_functions_service(self):
-        """Create a SupabaseEdgeFunctionsService instance for testing"""
-        with patch('apps.supabase.service.settings') as mock_settings:
+    def mock_settings(self):
+        """Mock Django settings"""
+        with patch('apps.supabase._service.settings') as mock_settings:
             # Configure mock settings
-            mock_settings.SUPABASE_DB_CONNECTION_STRING = 'https://example.supabase.co'
+            mock_settings.SUPABASE_URL = 'https://example.supabase.co'
             mock_settings.SUPABASE_ANON_KEY = 'test-anon-key'
             mock_settings.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key'
-            
-            edge_functions_service = SupabaseEdgeFunctionsService()
-            return edge_functions_service
+            yield mock_settings
+    
+    @pytest.fixture
+    def edge_functions_service(self, mock_settings):
+        """Create a SupabaseEdgeFunctionsService instance for testing"""
+        return SupabaseEdgeFunctionsService()
     
     @patch.object(SupabaseEdgeFunctionsService, '_make_request')
     def test_invoke_function_without_params(self, mock_make_request, edge_functions_service):

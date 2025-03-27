@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from ..database import SupabaseDatabaseService
 
@@ -8,19 +8,22 @@ class TestSupabaseDatabaseService:
     """Tests for the SupabaseDatabaseService class"""
 
     @pytest.fixture
-    def db_service(self):
-        """Create a SupabaseDatabaseService instance for testing"""
-        with patch('apps.supabase.service.settings') as mock_settings:
+    def mock_settings(self):
+        """Mock Django settings"""
+        with patch('apps.supabase._service.settings') as mock_settings:
             # Configure mock settings
-            mock_settings.SUPABASE_DB_CONNECTION_STRING = 'https://example.supabase.co'
+            mock_settings.SUPABASE_URL = 'https://example.supabase.co'
             mock_settings.SUPABASE_ANON_KEY = 'test-anon-key'
             mock_settings.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key'
-            
-            db_service = SupabaseDatabaseService()
-            return db_service
+            yield mock_settings
+    
+    @pytest.fixture
+    def db_service(self, mock_settings):
+        """Create a SupabaseDatabaseService instance for testing"""
+        return SupabaseDatabaseService()
     
     @patch.object(SupabaseDatabaseService, '_make_request')
-    def test_fetch_data(self, mock_make_request, db_service):
+    def test_fetch_data(self, mock_make_request, db_service, mock_settings):
         """Test fetching data from a table"""
         # Configure mock response
         mock_make_request.return_value = [
@@ -59,7 +62,7 @@ class TestSupabaseDatabaseService:
         assert result[1]['name'] == 'Item 2'
     
     @patch.object(SupabaseDatabaseService, '_make_request')
-    def test_fetch_data_with_complex_filters(self, mock_make_request, db_service):
+    def test_fetch_data_with_complex_filters(self, mock_make_request, db_service, mock_settings):
         """Test fetching data with complex filters"""
         # Configure mock response
         mock_make_request.return_value = [
@@ -94,7 +97,7 @@ class TestSupabaseDatabaseService:
         assert result[0]['id'] == 1
     
     @patch.object(SupabaseDatabaseService, '_make_request')
-    def test_insert_data(self, mock_make_request, db_service):
+    def test_insert_data(self, mock_make_request, db_service, mock_settings):
         """Test inserting data into a table"""
         # Configure mock response
         mock_make_request.return_value = [
@@ -123,7 +126,7 @@ class TestSupabaseDatabaseService:
         assert result[0]['name'] == 'New Item'
     
     @patch.object(SupabaseDatabaseService, '_make_request')
-    def test_update_data(self, mock_make_request, db_service):
+    def test_update_data(self, mock_make_request, db_service, mock_settings):
         """Test updating data in a table"""
         # Configure mock response
         mock_make_request.return_value = [
@@ -153,7 +156,7 @@ class TestSupabaseDatabaseService:
         assert result[0]['name'] == 'Updated Item'
     
     @patch.object(SupabaseDatabaseService, '_make_request')
-    def test_upsert_data(self, mock_make_request, db_service):
+    def test_upsert_data(self, mock_make_request, db_service, mock_settings):
         """Test upserting data in a table"""
         # Configure mock response
         mock_make_request.return_value = [
@@ -182,7 +185,7 @@ class TestSupabaseDatabaseService:
         assert result[0]['name'] == 'Upserted Item'
     
     @patch.object(SupabaseDatabaseService, '_make_request')
-    def test_delete_data(self, mock_make_request, db_service):
+    def test_delete_data(self, mock_make_request, db_service, mock_settings):
         """Test deleting data from a table"""
         # Configure mock response
         mock_make_request.return_value = [
@@ -210,7 +213,7 @@ class TestSupabaseDatabaseService:
         assert result[0]['name'] == 'Deleted Item'
     
     @patch.object(SupabaseDatabaseService, '_make_request')
-    def test_execute_function(self, mock_make_request, db_service):
+    def test_execute_function(self, mock_make_request, db_service, mock_settings):
         """Test executing a PostgreSQL function"""
         # Configure mock response
         mock_make_request.return_value = [

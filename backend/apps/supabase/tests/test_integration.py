@@ -9,7 +9,7 @@ load_dotenv()
 
 # Skip these tests if Supabase credentials are not available
 pytest.mark.skipif(
-    not os.getenv("SUPABASE_DB_CONNECTION_STRING")
+    not os.getenv("SUPABASE_URL")
     or not os.getenv("SUPABASE_ANON_KEY"),
     reason="Supabase credentials not available",
 )

@@ -2,23 +2,26 @@ import pytest
 from unittest.mock import patch, MagicMock
 import requests
 
-from .._service import SupabaseService
+from apps.supabase._service import SupabaseService
 
 
 class TestSupabaseService:
     """Tests for the SupabaseService base class"""
 
     @pytest.fixture
-    def service(self):
-        """Create a SupabaseService instance for testing"""
-        with patch('apps.supabase.service.settings') as mock_settings:
+    def mock_settings(self):
+        """Mock Django settings"""
+        with patch('apps.supabase._service.settings') as mock_settings:
             # Configure mock settings
-            mock_settings.SUPABASE_DB_CONNECTION_STRING = 'https://example.supabase.co'
+            mock_settings.SUPABASE_URL = 'https://example.supabase.co'
             mock_settings.SUPABASE_ANON_KEY = 'test-anon-key'
             mock_settings.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key'
-            
-            service = SupabaseService()
-            return service
+            yield mock_settings
+    
+    @pytest.fixture
+    def service(self, mock_settings):
+        """Create a SupabaseService instance for testing"""
+        return SupabaseService()
     
     def test_init(self, service):
         """Test initialization of SupabaseService"""
@@ -50,7 +53,7 @@ class TestSupabaseService:
         assert headers['apikey'] == 'test-service-role-key'
         assert headers['Authorization'] == 'Bearer test-service-role-key'
     
-    @patch('apps.supabase.service.requests.request')
+    @patch('apps.supabase._service.requests.request')
     def test_make_request_success(self, mock_request, service):
         """Test making a successful request"""
         # Configure mock response
@@ -79,13 +82,14 @@ class TestSupabaseService:
                 'Authorization': 'Bearer test-token'
             },
             json={'test': 'data'},
-            params={'param': 'value'}
+            params={'param': 'value'},
+            timeout=30
         )
         
         # Verify result
         assert result == {'data': 'test-data'}
     
-    @patch('apps.supabase.service.requests.request')
+    @patch('apps.supabase._service.requests.request')
     def test_make_request_http_error(self, mock_request, service):
         """Test making a request that results in an HTTP error"""
         # Configure mock response
@@ -105,7 +109,7 @@ class TestSupabaseService:
         
         assert 'Supabase API error' in str(excinfo.value)
     
-    @patch('apps.supabase.service.requests.request')
+    @patch('apps.supabase._service.requests.request')
     def test_make_request_general_error(self, mock_request, service):
         """Test making a request that results in a general error"""
         # Configure mock to raise exception
@@ -118,4 +122,4 @@ class TestSupabaseService:
                 endpoint='/test-endpoint'
             )
         
-        assert 'Supabase request error' in str(excinfo.value)
+        assert 'Unexpected error during Supabase request' in str(excinfo.value)

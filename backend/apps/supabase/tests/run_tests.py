@@ -1,40 +1,52 @@
 import os
 import sys
 import django
-from django.conf import settings
-from django.test.utils import get_runner
+import pytest
+from pathlib import Path
 
 # Add the parent directory to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
 
 # Set up Django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
+
+# Set environment variables to avoid database connections in tests
+os.environ['DJANGO_ALLOW_ASYNC_UNSAFE'] = 'true'
+
+# Initialize Django
 django.setup()
 
 def run_tests(test_labels=None):
     """
-    Run the specified tests or all tests if none are specified.
+    Run the specified tests or all tests if none are specified using pytest.
     
     Args:
         test_labels: List of test labels to run (e.g., ['test_service', 'test_database'])
                      If None, all tests in the current directory will be run.
     """
-    if test_labels is None:
-        # Run all tests in the current directory
-        test_labels = ['apps.supabase.tests']
-    elif isinstance(test_labels, list):
-        # Prefix each test label with the package name
-        test_labels = [f'apps.supabase.tests.{label}' for label in test_labels]
+    # Get the current directory
+    current_dir = Path(__file__).parent
     
-    # Get the test runner
-    TestRunner = get_runner(settings)
-    test_runner = TestRunner(verbosity=2, interactive=True)
+    # Build pytest arguments
+    pytest_args = ['-xvs']
     
-    # Run the tests
-    failures = test_runner.run_tests(test_labels)
+    if test_labels:
+        # Add specific test files
+        for label in test_labels:
+            if not label.endswith('.py'):
+                label = f"{label}.py"
+            pytest_args.append(str(current_dir / label))
+    else:
+        # Run all test files in the current directory
+        pytest_args.append(str(current_dir))
     
-    # Return the exit code (0 for success, 1 for failure)
-    return 1 if failures else 0
+    # Add configuration options
+    pytest_args.extend(['--no-header', '--no-summary'])
+    
+    print(f"Running tests with arguments: {pytest_args}")
+    
+    # Run pytest with the arguments
+    return pytest.main(pytest_args)
 
 if __name__ == '__main__':
     # Get test labels from command line arguments
