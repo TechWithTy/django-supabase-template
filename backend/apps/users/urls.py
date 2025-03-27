@@ -3,8 +3,11 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
 from . import base
-from .base import auth_view, client_view, database_view, edge_functions_view, health_check, realtime_view, storage_view, script_view
+from .views import auth_view, client_view, database_view, edge_functions_view, realtime_view, storage_view
+from .views.creditable_views import utility_view
 
+# Import health check from base if it exists there, otherwise we'll need to find it
+from ..authentication.views import health_check
 router = DefaultRouter()
 router.register(r'users', base.UserViewSet)
 

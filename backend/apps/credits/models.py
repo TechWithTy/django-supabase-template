@@ -1,5 +1,5 @@
 from django.db import models, transaction
-from django.contrib.auth.models import User
+from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 import logging
 import uuid
@@ -27,7 +27,7 @@ class CreditTransaction(models.Model):
         editable=False
     )
     user = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='credit_transactions'
     )
@@ -113,7 +113,7 @@ class CreditHold(models.Model):
         editable=False
     )
     user = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='credit_holds'
     )

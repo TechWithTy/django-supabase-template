@@ -1,5 +1,5 @@
 from django.db import models, transaction
-from django.contrib.auth.models import User
+from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 
 class UserProfile(models.Model):
@@ -10,7 +10,7 @@ class UserProfile(models.Model):
     that are specific to our application, including Supabase-related information.
     """
     user = models.OneToOneField(
-        User, 
+        settings.AUTH_USER_MODEL, 
         on_delete=models.CASCADE, 
         related_name='profile'
     )

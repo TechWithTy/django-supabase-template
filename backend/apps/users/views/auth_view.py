@@ -1,5 +1,3 @@
-
-
 from django.conf import settings
 from django.contrib.auth.models import User
 from rest_framework import viewsets, status, permissions
@@ -13,8 +11,8 @@ from apps.supabase.auth import (
     # Import specific functions from SupabaseAuthService
 )
 
-from .models import UserProfile
-from .serializers import UserSerializer, UserProfileSerializer
+from ..models import UserProfile
+from ..serializers import UserSerializer, UserProfileSerializer
 
 auth_service = SupabaseAuthService()
 

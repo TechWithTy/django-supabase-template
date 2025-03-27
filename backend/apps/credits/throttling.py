@@ -105,7 +105,7 @@ class CreditBasedThrottle(UserRateThrottle):
             pattern = rate.endpoint_path
             # Convert the endpoint pattern to a regex pattern
             # Replace {id} or similar placeholders with regex groups
-            regex_pattern = pattern.replace('/', '\/')
+            regex_pattern = pattern.replace('/', r'\/')
             regex_pattern = re.sub(r'\{[^}]+\}', r'[^\/]+', regex_pattern)
             
             if re.match(regex_pattern, path):
