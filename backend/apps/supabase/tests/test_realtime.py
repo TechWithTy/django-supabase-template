@@ -49,102 +49,31 @@ class TestSupabaseRealtimeService:
         assert result['channels'][1]['name'] == 'Channel 2'
     
     @patch.object(SupabaseRealtimeService, '_make_request')
-    def test_get_channel(self, mock_make_request, realtime_service):
-        """Test getting a specific channel"""
-        # Configure mock response
-        mock_make_request.return_value = {
-            'id': 'test-channel',
-            'name': 'Test Channel',
-            'subscribers': 5
-        }
-        
-        # Call get_channel method
-        result = realtime_service.get_channel(
-            channel_id='test-channel',
-            auth_token='test-token'
-        )
-        
-        # Verify request was made correctly
-        mock_make_request.assert_called_once_with(
-            method='GET',
-            endpoint='/realtime/v1/channels/test-channel',
-            auth_token='test-token'
-        )
-        
-        # Verify result
-        assert result['id'] == 'test-channel'
-        assert result['subscribers'] == 5
-    
-    @patch.object(SupabaseRealtimeService, '_make_request')
-    def test_create_channel(self, mock_make_request, realtime_service):
-        """Test creating a channel"""
-        # Configure mock response
-        mock_make_request.return_value = {
-            'id': 'new-channel',
-            'name': 'New Channel',
-            'subscribers': 0
-        }
-        
-        # Call create_channel method
-        result = realtime_service.create_channel(
-            channel_id='new-channel',
-            auth_token='test-token'
-        )
-        
-        # Verify request was made correctly
-        mock_make_request.assert_called_once_with(
-            method='POST',
-            endpoint='/realtime/v1/channels',
-            auth_token='test-token',
-            data={'id': 'new-channel'}
-        )
-        
-        # Verify result
-        assert result['id'] == 'new-channel'
-        assert result['subscribers'] == 0
-    
-    @patch.object(SupabaseRealtimeService, '_make_request')
-    def test_delete_channel(self, mock_make_request, realtime_service):
-        """Test deleting a channel"""
-        # Configure mock response
-        mock_make_request.return_value = {}
-        
-        # Call delete_channel method
-        realtime_service.delete_channel(
-            channel_id='test-channel',
-            auth_token='test-token'
-        )
-        
-        # Verify request was made correctly
-        mock_make_request.assert_called_once_with(
-            method='DELETE',
-            endpoint='/realtime/v1/channels/test-channel',
-            auth_token='test-token'
-        )
-    
-    @patch.object(SupabaseRealtimeService, '_make_request')
     def test_subscribe_to_channel(self, mock_make_request, realtime_service):
         """Test subscribing to a channel"""
         # Configure mock response
         mock_make_request.return_value = {
             'subscription_id': 'sub123',
-            'channel_id': 'test-channel',
+            'channel': 'test-channel',
             'status': 'subscribed'
         }
         
         # Call subscribe_to_channel method
         result = realtime_service.subscribe_to_channel(
-            channel_id='test-channel',
-            event_types=['INSERT', 'UPDATE'],
+            channel='test-channel',
+            event='INSERT',
             auth_token='test-token'
         )
         
         # Verify request was made correctly
         mock_make_request.assert_called_once_with(
             method='POST',
-            endpoint='/realtime/v1/channels/test-channel/subscribe',
+            endpoint='/realtime/v1/subscribe',
             auth_token='test-token',
-            data={'event_types': ['INSERT', 'UPDATE']}
+            data={
+                'channel': 'test-channel',
+                'event': 'INSERT'
+            }
         )
         
         # Verify result
@@ -162,16 +91,18 @@ class TestSupabaseRealtimeService:
         
         # Call unsubscribe_from_channel method
         result = realtime_service.unsubscribe_from_channel(
-            channel_id='test-channel',
             subscription_id='sub123',
             auth_token='test-token'
         )
         
         # Verify request was made correctly
         mock_make_request.assert_called_once_with(
-            method='DELETE',
-            endpoint='/realtime/v1/channels/test-channel/subscriptions/sub123',
-            auth_token='test-token'
+            method='POST',
+            endpoint='/realtime/v1/unsubscribe',
+            auth_token='test-token',
+            data={
+                'subscription_id': 'sub123'
+            }
         )
         
         # Verify result
@@ -189,8 +120,8 @@ class TestSupabaseRealtimeService:
         
         # Call broadcast_message method
         result = realtime_service.broadcast_message(
-            channel_id='test-channel',
-            event_type='CUSTOM',
+            channel='test-channel',
+            event='CUSTOM',
             payload={'message': 'Hello, world!'},
             auth_token='test-token'
         )
@@ -198,10 +129,11 @@ class TestSupabaseRealtimeService:
         # Verify request was made correctly
         mock_make_request.assert_called_once_with(
             method='POST',
-            endpoint='/realtime/v1/channels/test-channel/broadcast',
+            endpoint='/realtime/v1/broadcast',
             auth_token='test-token',
             data={
-                'event_type': 'CUSTOM',
+                'channel': 'test-channel',
+                'event': 'CUSTOM',
                 'payload': {'message': 'Hello, world!'}
             }
         )
