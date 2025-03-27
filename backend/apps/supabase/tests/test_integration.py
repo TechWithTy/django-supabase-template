@@ -9,8 +9,9 @@ load_dotenv()
 
 # Skip these tests if Supabase credentials are not available
 pytest.mark.skipif(
-    not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_ANON_KEY"),
-    reason="Supabase credentials not available"
+    not os.getenv("SUPABASE_DB_CONNECTION_STRING")
+    or not os.getenv("SUPABASE_ANON_KEY"),
+    reason="Supabase credentials not available",
 )
 
 
@@ -52,6 +53,7 @@ class TestSupabaseIntegration:
 
         # Generate a unique email for testing
         import uuid
+
         unique_email = f"test-{uuid.uuid4()}@example.com"
         test_password = "securePassword123!"
 
@@ -60,15 +62,14 @@ class TestSupabaseIntegration:
             signup_response = supabase_client.auth.sign_up(
                 email=unique_email,
                 password=test_password,
-                user_metadata={"name": "Test User"}
+                user_metadata={"name": "Test User"},
             )
             assert signup_response is not None
             assert "user" in signup_response or "id" in signup_response
 
             # Sign in with the new user
             signin_response = supabase_client.auth.sign_in_with_email(
-                email=unique_email,
-                password=test_password
+                email=unique_email, password=test_password
             )
             assert signin_response is not None
             assert "access_token" in signin_response
@@ -82,7 +83,7 @@ class TestSupabaseIntegration:
             # Sign in with existing test user
             response = supabase_client.auth.sign_in_with_email(
                 email=test_user_credentials["email"],
-                password=test_user_credentials["password"]
+                password=test_user_credentials["password"],
             )
             assert response is not None
             assert "access_token" in response
@@ -95,13 +96,15 @@ class TestSupabaseIntegration:
         except Exception as e:
             pytest.skip(f"Skipping test due to authentication error: {e}")
 
-    def test_database_operations(self, supabase_client, test_user_credentials, test_table_name):
+    def test_database_operations(
+        self, supabase_client, test_user_credentials, test_table_name
+    ):
         """Test database operations"""
         try:
             # Sign in first to get token
             auth_response = supabase_client.auth.sign_in_with_email(
                 email=test_user_credentials["email"],
-                password=test_user_credentials["password"]
+                password=test_user_credentials["password"],
             )
             token = auth_response["access_token"]
 
@@ -110,9 +113,7 @@ class TestSupabaseIntegration:
 
             # Insert data
             insert_response = supabase_client.database.insert_data(
-                table=test_table_name,
-                data=test_data,
-                auth_token=token
+                table=test_table_name, data=test_data, auth_token=token
             )
             assert insert_response is not None
             assert len(insert_response) > 0
@@ -120,9 +121,7 @@ class TestSupabaseIntegration:
 
             # Fetch data
             fetch_response = supabase_client.database.fetch_data(
-                table=test_table_name,
-                filters={"id": inserted_id},
-                auth_token=token
+                table=test_table_name, filters={"id": inserted_id}, auth_token=token
             )
             assert fetch_response is not None
             assert len(fetch_response) > 0
@@ -134,7 +133,7 @@ class TestSupabaseIntegration:
                 table=test_table_name,
                 data=update_data,
                 filters={"id": inserted_id},
-                auth_token=token
+                auth_token=token,
             )
             assert update_response is not None
             assert len(update_response) > 0
@@ -142,42 +141,40 @@ class TestSupabaseIntegration:
 
             # Delete data
             delete_response = supabase_client.database.delete_data(
-                table=test_table_name,
-                filters={"id": inserted_id},
-                auth_token=token
+                table=test_table_name, filters={"id": inserted_id}, auth_token=token
             )
             assert delete_response is not None
 
         except Exception as e:
             pytest.skip(f"Skipping test due to database error: {e}")
 
-    def test_storage_operations(self, supabase_client, test_user_credentials, test_bucket_name):
+    def test_storage_operations(
+        self, supabase_client, test_user_credentials, test_bucket_name
+    ):
         """Test storage operations"""
         try:
             # Sign in first to get token
             auth_response = supabase_client.auth.sign_in_with_email(
                 email=test_user_credentials["email"],
-                password=test_user_credentials["password"]
+                password=test_user_credentials["password"],
             )
             token = auth_response["access_token"]
 
             # Create a test file
             import io
+
             test_file = io.BytesIO(b"Test file content")
             test_filename = f"test-file-{os.urandom(4).hex()}.txt"
 
             # Check if bucket exists, create if it doesn't
             try:
                 supabase_client.storage.get_bucket(
-                    bucket_id=test_bucket_name,
-                    auth_token=token
+                    bucket_id=test_bucket_name, auth_token=token
                 )
             except Exception:
                 # Bucket doesn't exist, create it
                 supabase_client.storage.create_bucket(
-                    bucket_id=test_bucket_name,
-                    public=True,
-                    auth_token=token
+                    bucket_id=test_bucket_name, public=True, auth_token=token
                 )
 
             # Upload file
@@ -186,40 +183,34 @@ class TestSupabaseIntegration:
                 path=test_filename,
                 file_data=test_file,
                 content_type="text/plain",
-                auth_token=token
+                auth_token=token,
             )
             assert upload_response is not None
 
             # List files
             list_response = supabase_client.storage.list_files(
-                bucket_id=test_bucket_name,
-                auth_token=token
+                bucket_id=test_bucket_name, auth_token=token
             )
             assert list_response is not None
             assert "items" in list_response
-            
+
             # Get public URL
             public_url = supabase_client.storage.get_public_url(
-                bucket_id=test_bucket_name,
-                path=test_filename
+                bucket_id=test_bucket_name, path=test_filename
             )
             assert test_bucket_name in public_url
             assert test_filename in public_url
 
             # Download file
             download_response = supabase_client.storage.download_file(
-                bucket_id=test_bucket_name,
-                path=test_filename,
-                auth_token=token
+                bucket_id=test_bucket_name, path=test_filename, auth_token=token
             )
             assert download_response is not None
             assert b"Test file content" == download_response
 
             # Delete file
             supabase_client.storage.delete_file(
-                bucket_id=test_bucket_name,
-                paths=[test_filename],
-                auth_token=token
+                bucket_id=test_bucket_name, paths=[test_filename], auth_token=token
             )
 
         except Exception as e:
@@ -236,7 +227,7 @@ class TestSupabaseIntegration:
             # Sign in first to get token
             auth_response = supabase_client.auth.sign_in_with_email(
                 email=test_user_credentials["email"],
-                password=test_user_credentials["password"]
+                password=test_user_credentials["password"],
             )
             token = auth_response["access_token"]
 
@@ -244,7 +235,7 @@ class TestSupabaseIntegration:
             response = supabase_client.edge_functions.invoke_function(
                 function_name=edge_function_name,
                 params={"test": True},
-                auth_token=token
+                auth_token=token,
             )
             assert response is not None
 

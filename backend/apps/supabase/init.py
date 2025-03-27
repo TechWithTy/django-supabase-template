@@ -1,6 +1,31 @@
 from django.conf import settings
-from supabase import create_client, Client
 import logging
+import sys
+from utils.sensitive import load_environment_files
+import os
+# Load environment variables
+load_environment_files()
+
+# Force Python to look for the supabase package in site-packages first
+# This prevents our local 'supabase' module from shadowing the installed library
+for path in sys.path:
+    if 'site-packages' in path:
+        sys.path.insert(0, path)
+        break
+
+# Now import from the actual supabase-py library
+try:
+    from supabase_py import create_client, Client
+except ImportError:
+    try:
+        # Try alternative import path (depending on how the package was installed)
+        from supabase import create_client, Client
+    except ImportError:
+        raise ImportError(
+            "Could not import 'create_client' from either 'supabase_py' or 'supabase'. "
+            "Please ensure the supabase-py package is installed using: "
+            "pip install supabase"
+        )
 
 logger = logging.getLogger('apps.supabase')
 
@@ -27,9 +52,11 @@ def initialize_supabase() -> Client:
         return _supabase_client
     
     # Check for required environment variables
-    supabase_url = getattr(settings, 'SUPABASE_URL', None)
-    supabase_key = getattr(settings, 'SUPABASE_ANON_KEY', None)
-    
+    supabase_url = os.getenv('SUPABASE_URL')
+    supabase_key = os.getenv('SUPABASE_ANON_KEY')
+
+    print(f"Supabase URL: {supabase_url}")  # Added print statement to show the URL
+        
     if not supabase_url:
         error_msg = "SUPABASE_URL is not set in environment variables"
         logger.error(error_msg)

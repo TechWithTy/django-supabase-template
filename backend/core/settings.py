@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 import sentry_sdk
 from sentry_sdk.integrations.django import DjangoIntegration
 from utils.sensitive import load_environment_files
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -106,8 +107,8 @@ connection_url = os.getenv(
     "SUPABASE_DB_CONNECTION_STRING",
     "postgresql://postgres.yourconnection:[YOUR-PASSWORD]@aws-0-us-west-1.pooler.supabase.com:6543/postgres",
 )
-connection_url = connection_url.replace('[', '').replace(']', '')
-print("Connection URL:", connection_url)
+connection_url = connection_url.replace("[", "").replace("]", "")
+print("Connection String:", connection_url)
 parsed_url = urlparse(connection_url)
 # Extract parsed values to variables
 SUPABASE_DB_NAME = parsed_url.path.lstrip("/")
@@ -115,7 +116,15 @@ SUPABASE_DB_USER = parsed_url.username
 SUPABASE_DB_HOST = parsed_url.hostname
 SUPABASE_DB_PORT = parsed_url.port or "5432"
 SUPABASE_DB_PASSWORD = os.getenv("SUPABASE_DB_PASSWORD", "prod123")
-SUPABASE_DB_CONNECTION_STRING = os.getenv("SUPABASE_DB_CONNECTION_STRING", "No Connection String")
+SUPABASE_DB_CONNECTION_STRING = os.getenv(
+    "SUPABASE_DB_CONNECTION_STRING", "No Connection String"
+)
+
+# Supabase API Configuration
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://thzqgzpbfcjuemcrqosf.supabase.co")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
 
 # Print parsed values for debugging
 print("Supabase DB Config:")
@@ -125,6 +134,7 @@ print(f"Host: {SUPABASE_DB_HOST}")
 print(f"Port: {SUPABASE_DB_PORT}")
 print(f"Password: {'*' * len(SUPABASE_DB_PASSWORD)}")  # Mask password
 print(f"Connection String: {SUPABASE_DB_CONNECTION_STRING}")  # Mask password
+print("Supabase URL:", SUPABASE_URL)
 
 # Database configurations
 DATABASES = {
@@ -227,7 +237,7 @@ CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000"
 CORS_ALLOW_CREDENTIALS = True
 
 # Supabase settings
-SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_DB_CONNECTION_STRING = os.getenv("SUPABASE_DB_CONNECTION_STRING")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
