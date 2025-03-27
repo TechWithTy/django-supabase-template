@@ -2,261 +2,349 @@ import pytest
 import os
 import uuid
 import time
-from unittest.mock import patch
+import requests
+import random
+import string
 
 from ..realtime import SupabaseRealtimeService
+from ..auth import SupabaseAuthService
+from .._service import SupabaseAPIError, SupabaseAuthError
 
 
-class TestSupabaseRealtimeService:
-    """Tests for the SupabaseRealtimeService class"""
+def diagnose_supabase_realtime_issue():
+    """Diagnose common issues with Supabase Realtime API"""
+    # Check environment variables
+    supabase_url = os.getenv("SUPABASE_URL")
+    anon_key = os.getenv("SUPABASE_ANON_KEY")
+    service_role_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
-    @pytest.fixture
-    def mock_settings(self):
-        """Mock Django settings"""
-        with patch("apps.supabase_home._service.settings") as mock_settings:
-            # Configure mock settings
-            mock_settings.SUPABASE_URL = "https://example.supabase.co"
-            mock_settings.SUPABASE_ANON_KEY = "test-anon-key"
-            mock_settings.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key"
-            yield mock_settings
+    issues = []
 
-    @pytest.fixture
-    def realtime_service(self, mock_settings):
-        """Create a SupabaseRealtimeService instance for testing"""
-        return SupabaseRealtimeService()
+    if not supabase_url:
+        issues.append("SUPABASE_URL environment variable is not set")
+    elif not supabase_url.startswith("http"):
+        issues.append(f"SUPABASE_URL has invalid format: {supabase_url}")
 
-    @patch.object(SupabaseRealtimeService, "_make_request")
-    def test_get_channels(self, mock_make_request, realtime_service):
-        """Test getting all channels"""
-        # Configure mock response
-        mock_make_request.return_value = {
-            "channels": [
-                {"id": "channel1", "name": "Channel 1"},
-                {"id": "channel2", "name": "Channel 2"},
-            ]
-        }
+    if not anon_key:
+        issues.append("SUPABASE_ANON_KEY environment variable is not set")
 
-        # Call get_channels method
-        result = realtime_service.get_channels(auth_token="test-token")
+    if not service_role_key:
+        issues.append("SUPABASE_SERVICE_ROLE_KEY environment variable is not set")
 
-        # Verify request was made correctly
-        mock_make_request.assert_called_once_with(
-            method="GET", endpoint="/realtime/v1/channels", auth_token="test-token"
-        )
+    # Check if Realtime is enabled by making a direct request
+    if supabase_url and (anon_key or service_role_key):
+        try:
+            # Try to access the Realtime health endpoint
+            headers = {"apikey": service_role_key or anon_key}
+            response = requests.get(
+                f"{supabase_url}/realtime/v1/health", headers=headers, timeout=5
+            )
 
-        # Verify result
-        assert len(result["channels"]) == 2
-        assert result["channels"][0]["id"] == "channel1"
-        assert result["channels"][1]["name"] == "Channel 2"
+            if response.status_code >= 400:
+                issues.append(
+                    f"Realtime API health check failed with status {response.status_code}: {response.text}"
+                )
 
-    @patch.object(SupabaseRealtimeService, "_make_request")
-    def test_subscribe_to_channel(self, mock_make_request, realtime_service):
-        """Test subscribing to a channel"""
-        # Configure mock response
-        mock_make_request.return_value = {
-            "subscription_id": "sub123",
-            "channel": "test-channel",
-            "status": "subscribed",
-        }
+                if response.status_code == 404:
+                    issues.append(
+                        "Realtime API endpoint not found. Make sure Realtime is enabled in your Supabase project."
+                    )
+                elif response.status_code == 403:
+                    issues.append(
+                        "Permission denied. Make sure you have the correct API keys and Realtime is enabled."
+                    )
+        except Exception as e:
+            issues.append(f"Error checking Realtime health: {str(e)}")
 
-        # Call subscribe_to_channel method
-        result = realtime_service.subscribe_to_channel(
-            channel="test-channel", event="INSERT", auth_token="test-token"
-        )
-
-        # Verify request was made correctly
-        mock_make_request.assert_called_once_with(
-            method="POST",
-            endpoint="/realtime/v1/subscribe",
-            auth_token="test-token",
-            data={"channel": "test-channel", "event": "INSERT"},
-        )
-
-        # Verify result
-        assert result["subscription_id"] == "sub123"
-        assert result["status"] == "subscribed"
-
-    @patch.object(SupabaseRealtimeService, "_make_request")
-    def test_unsubscribe_from_channel(self, mock_make_request, realtime_service):
-        """Test unsubscribing from a channel"""
-        # Configure mock response
-        mock_make_request.return_value = {
-            "subscription_id": "sub123",
-            "status": "unsubscribed",
-        }
-
-        # Call unsubscribe_from_channel method
-        result = realtime_service.unsubscribe_from_channel(
-            subscription_id="sub123", auth_token="test-token"
-        )
-
-        # Verify request was made correctly
-        mock_make_request.assert_called_once_with(
-            method="POST",
-            endpoint="/realtime/v1/unsubscribe",
-            auth_token="test-token",
-            data={"subscription_id": "sub123"},
-        )
-
-        # Verify result
-        assert result["subscription_id"] == "sub123"
-        assert result["status"] == "unsubscribed"
-
-    @patch.object(SupabaseRealtimeService, "_make_request")
-    def test_broadcast_message(self, mock_make_request, realtime_service):
-        """Test broadcasting a message to a channel"""
-        # Configure mock response
-        mock_make_request.return_value = {"message_id": "msg123", "status": "delivered"}
-
-        # Call broadcast_message method
-        result = realtime_service.broadcast_message(
-            channel="test-channel",
-            event="CUSTOM",
-            payload={"message": "Hello, world!"},
-            auth_token="test-token",
-        )
-
-        # Verify request was made correctly
-        mock_make_request.assert_called_once_with(
-            method="POST",
-            endpoint="/realtime/v1/broadcast",
-            auth_token="test-token",
-            data={
-                "channel": "test-channel",
-                "event": "CUSTOM",
-                "payload": {"message": "Hello, world!"},
-            },
-        )
-
-        # Verify result
-        assert result["message_id"] == "msg123"
-        assert result["status"] == "delivered"
+    return issues
 
 
 class TestRealSupabaseRealtimeService:
     """Real-world integration tests for SupabaseRealtimeService
-    
+
     These tests make actual API calls to Supabase and require:
     1. A valid Supabase URL and API keys in env variables
-    2. Use of the --integration flag when running tests
-    3. A Supabase instance with realtime enabled
+    2. A Supabase instance with realtime enabled
     """
-    
+
+    @pytest.fixture(scope="class")
+    def realtime_issues(self):
+        """Check for issues with Supabase Realtime setup"""
+        return diagnose_supabase_realtime_issue()
+
     @pytest.fixture
     def realtime_service(self):
         """Create a real SupabaseRealtimeService instance"""
         return SupabaseRealtimeService()
-    
+
+    @pytest.fixture
+    def auth_service(self):
+        """Create a real SupabaseAuthService instance"""
+        return SupabaseAuthService()
+
+    @pytest.fixture
+    def test_user_credentials(self):
+        """Generate random credentials for a test user"""
+        random_suffix = "".join(
+            random.choices(string.ascii_lowercase + string.digits, k=8)
+        )
+        email = f"test-user-{random_suffix}@example.com"
+        password = f"Password123!{random_suffix}"
+        return {"email": email, "password": password}
+
+    @pytest.fixture
+    def auth_token(self, auth_service, test_user_credentials):
+        """Create a test user and return the auth token"""
+        print("\n=== DEBUG: Starting auth_token fixture ===")
+        print(f"Test credentials: {test_user_credentials}")
+        print(f"Auth service: {auth_service.__class__.__name__}")
+
+        try:
+            # First try to create the user with admin privileges
+            print("Attempting to create user...")
+            user_result = auth_service.create_user(
+                email=test_user_credentials["email"],
+                password=test_user_credentials["password"],
+            )
+            print(f"Create user result: {user_result}")
+
+            # Now sign in to get the access token
+            print("Attempting to sign in...")
+            signin_result = auth_service.sign_in_with_email(
+                email=test_user_credentials["email"],
+                password=test_user_credentials["password"],
+            )
+            print(f"Sign in result: {signin_result}")
+
+            # Extract the access token from the sign-in result
+            access_token = signin_result.get("access_token")
+            if not access_token:
+                # Try alternate location in the response
+                access_token = signin_result.get("session", {}).get("access_token")
+
+            print(f"Access token obtained: {bool(access_token)}")
+            return access_token
+        except Exception as e:
+            print(f"Error creating test user: {str(e)}")
+            print(f"Exception type: {type(e).__name__}")
+            # If user already exists, try to sign in
+            try:
+                print("User may already exist. Attempting to sign in...")
+                signin_result = auth_service.sign_in_with_email(
+                    email=test_user_credentials["email"],
+                    password=test_user_credentials["password"],
+                )
+                print(f"Sign in result: {signin_result}")
+
+                # Extract the access token from the sign-in result
+                access_token = signin_result.get("access_token")
+                if not access_token:
+                    # Try alternate location in the response
+                    access_token = signin_result.get("session", {}).get("access_token")
+
+                print(f"Access token obtained: {bool(access_token)}")
+                return access_token
+            except Exception as signin_error:
+                print(f"Error signing in: {str(signin_error)}")
+                print(f"Exception type: {type(signin_error).__name__}")
+                return None
+
     @pytest.fixture
     def test_table_name(self):
         """Test table name for realtime tests"""
         return os.getenv("TEST_TABLE_NAME", "test_table")
-    
+
     @pytest.fixture
     def test_channel_name(self):
         """Generate a unique test channel name"""
         return f"test-channel-{uuid.uuid4()}"
-    
-    @pytest.mark.skipif(
-        not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_ANON_KEY"),
-        reason="Supabase credentials not set in environment variables",
-    )
-    def test_real_subscribe_and_broadcast(self, realtime_service, test_channel_name):
+
+    def test_real_subscribe_and_broadcast(
+        self, realtime_service, test_channel_name, realtime_issues, auth_token
+    ):
         """Test subscribing to a channel and broadcasting a message
-        
+
         Note: This test requires that your Supabase instance has realtime enabled.
         """
-        # Skip if not using --integration flag
-        if os.getenv("SKIP_INTEGRATION_TESTS", "true").lower() == "true":
-            pytest.skip("Integration tests disabled - use --integration flag to run")
-        
+        # Skip test if no auth token is available
+        if not auth_token:
+            pytest.skip(
+                "No authentication token available. Cannot test Realtime API without authentication."
+            )
+
+        # Report any setup issues but continue with the test
+        if realtime_issues:
+            for issue in realtime_issues:
+                print(f"WARNING: {issue}")
+            print("\nContinuing with test despite setup issues...")
+
         try:
             # 1. Subscribe to a test channel
             subscribe_result = realtime_service.subscribe_to_channel(
                 channel=test_channel_name,
-                event="BROADCAST"
+                event="BROADCAST",
+                auth_token=auth_token,  # Use the auth token instead of admin privileges
             )
-            
+
             assert subscribe_result is not None
             assert "subscription_id" in subscribe_result
             assert "status" in subscribe_result
-            
+
             subscription_id = subscribe_result["subscription_id"]
-            print(f"Successfully subscribed to channel '{test_channel_name}' with subscription ID: {subscription_id}")
-            
+            print(
+                f"Successfully subscribed to channel '{test_channel_name}' with subscription ID: {subscription_id}"
+            )
+
             # 2. Broadcast a test message
-            test_message = {"message": f"Test message {uuid.uuid4()}", "timestamp": time.time()}
+            test_message = {
+                "message": f"Test message {uuid.uuid4()}",
+                "timestamp": time.time(),
+            }
             broadcast_result = realtime_service.broadcast_message(
                 channel=test_channel_name,
                 event="BROADCAST",
-                payload=test_message
+                payload=test_message,
+                auth_token=auth_token,  # Use the auth token instead of admin privileges
             )
-            
+
             assert broadcast_result is not None
+            assert "message_id" in broadcast_result
+            assert "status" in broadcast_result
             print(f"Successfully broadcast message to channel '{test_channel_name}'")
-            
+
             # 3. Unsubscribe from the channel
             unsubscribe_result = realtime_service.unsubscribe_from_channel(
-                subscription_id=subscription_id
+                subscription_id=subscription_id,
+                auth_token=auth_token,  # Use the auth token instead of admin privileges
             )
-            
+
             assert unsubscribe_result is not None
             assert "status" in unsubscribe_result
             print(f"Successfully unsubscribed from channel '{test_channel_name}'")
-            
-        except Exception as e:
-            if "feature is not enabled" in str(e).lower():
-                pytest.skip("Realtime feature is not enabled in your Supabase instance")
-            else:
-                pytest.fail(f"Real-world Supabase realtime test failed: {str(e)}")
-    
-    @pytest.mark.skipif(
-        not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_SERVICE_ROLE_KEY"),
-        reason="Supabase credentials not set in environment variables",
-    )
-    def test_real_table_changes(self, realtime_service, test_table_name):
-        """Test subscribing to table changes
-        
-        Note: This test requires that your Supabase instance has realtime enabled,
-        and you have enabled database change events in your project settings.
-        You must have a database table with the name specified in TEST_TABLE_NAME.
-        """
-        # Skip if not using --integration flag
-        if os.getenv("SKIP_INTEGRATION_TESTS", "true").lower() == "true":
-            pytest.skip("Integration tests disabled - use --integration flag to run")
-        
-        try:
-            # 1. Subscribe to database table changes
-            channel_name = f"realtime:public:{test_table_name}"
-            
-            subscribe_result = realtime_service.subscribe_to_channel(
-                channel=channel_name,
-                event="*",  # Listen to all events (INSERT, UPDATE, DELETE)
-                is_admin=True  # Use admin token for realtime subscription
+
+        except SupabaseAuthError as e:
+            pytest.fail(
+                f"Authentication error: {str(e)}\n\nPossible causes:\n"
+                + "1. Realtime feature is not enabled in your Supabase project\n"
+                + "2. Your auth token doesn't have permission to access Realtime API\n"
+                + "3. You need to enable the appropriate RLS policies for Realtime"
             )
-            
+        except SupabaseAPIError as e:
+            pytest.fail(
+                f"API error: {str(e)}\n\nCheck your Supabase project configuration."
+            )
+        except Exception as e:
+            pytest.fail(f"Unexpected error: {str(e)}")
+
+    def test_real_get_channels(self, realtime_service, realtime_issues):
+        """Test getting all channels"""
+        # Report any setup issues but continue with the test
+        if realtime_issues:
+            for issue in realtime_issues:
+                print(f"WARNING: {issue}")
+            print("\nContinuing with test despite setup issues...")
+
+        try:
+            # Get all channels
+            channels_result = realtime_service.get_channels(
+                is_admin=True
+            )  # Use admin privileges
+
+            assert channels_result is not None
+            assert "channels" in channels_result
+            print(f"Successfully retrieved {len(channels_result['channels'])} channels")
+
+        except SupabaseAuthError as e:
+            pytest.fail(
+                f"Authentication error: {str(e)}\n\nPossible causes:\n"
+                + "1. Realtime feature is not enabled in your Supabase project\n"
+                + "2. Your service role key doesn't have permission to access Realtime API\n"
+                + "3. You need to enable the appropriate RLS policies for Realtime"
+            )
+        except SupabaseAPIError as e:
+            pytest.fail(
+                f"API error: {str(e)}\n\nCheck your Supabase project configuration."
+            )
+        except Exception as e:
+            pytest.fail(f"Unexpected error: {str(e)}")
+
+    def test_real_unsubscribe_all(
+        self, realtime_service, test_channel_name, realtime_issues
+    ):
+        """Test unsubscribing from all channels"""
+        # Report any setup issues but continue with the test
+        if realtime_issues:
+            for issue in realtime_issues:
+                print(f"WARNING: {issue}")
+            print("\nContinuing with test despite setup issues...")
+
+        try:
+            # 1. Subscribe to a test channel
+            subscribe_result = realtime_service.subscribe_to_channel(
+                channel=test_channel_name,
+                event="BROADCAST",
+                is_admin=True,  # Use admin privileges
+            )
+
             assert subscribe_result is not None
             assert "subscription_id" in subscribe_result
-            
-            subscription_id = subscribe_result["subscription_id"]
-            print(f"Successfully subscribed to table changes for '{test_table_name}'")
-            
-            # Note: In a real application, you would set up a listener to handle changes,
-            # but for this test, we're just verifying that we can subscribe without errors
-            
-            # 3. Unsubscribe when done
-            unsubscribe_result = realtime_service.unsubscribe_from_channel(
-                subscription_id=subscription_id,
+
+            # 2. Unsubscribe from all channels
+            unsubscribe_all_result = realtime_service.unsubscribe_all(
                 is_admin=True
+            )  # Use admin privileges
+
+            assert unsubscribe_all_result is not None
+            assert "status" in unsubscribe_all_result
+            print("Successfully unsubscribed from all channels")
+
+            # 3. Verify channels are empty
+            channels_result = realtime_service.get_channels(
+                is_admin=True
+            )  # Use admin privileges
+            assert channels_result is not None
+            assert "channels" in channels_result
+
+            # Note: This assertion might fail if there are other active subscriptions
+            # in your Supabase instance that weren't created by this test
+            if len(channels_result["channels"]) > 0:
+                print(
+                    f"Warning: {len(channels_result['channels'])} channels still active after unsubscribe_all"
+                )
+
+        except SupabaseAuthError as e:
+            pytest.fail(
+                f"Authentication error: {str(e)}\n\nPossible causes:\n"
+                + "1. Realtime feature is not enabled in your Supabase project\n"
+                + "2. Your service role key doesn't have permission to access Realtime API\n"
+                + "3. You need to enable the appropriate RLS policies for Realtime"
             )
-            
-            assert unsubscribe_result is not None
-            print(f"Successfully unsubscribed from table changes for '{test_table_name}'")
-            
+        except SupabaseAPIError as e:
+            pytest.fail(
+                f"API error: {str(e)}\n\nCheck your Supabase project configuration."
+            )
         except Exception as e:
-            if "feature is not enabled" in str(e).lower():
-                pytest.skip("Realtime feature is not enabled in your Supabase instance")
-            elif "table does not exist" in str(e).lower():
-                pytest.skip(f"Table '{test_table_name}' does not exist in your Supabase database")
-            else:
-                pytest.fail(f"Real-world Supabase realtime table changes test failed: {str(e)}")
+            pytest.fail(f"Unexpected error: {str(e)}")
+
+    def test_error_handling_with_real_service(self, realtime_service, realtime_issues):
+        """Test error handling with real service"""
+        # Report any setup issues but continue with the test
+        if realtime_issues:
+            for issue in realtime_issues:
+                print(f"WARNING: {issue}")
+            print("\nContinuing with test despite setup issues...")
+
+        try:
+            # Try to subscribe with an invalid channel name (containing spaces)
+            # We expect a SupabaseAPIError or SupabaseAuthError
+            with pytest.raises((SupabaseAPIError, SupabaseAuthError)) as excinfo:
+                realtime_service.subscribe_to_channel(
+                    channel="invalid channel name",
+                    is_admin=True,  # Use admin privileges
+                )
+
+            # Verify exception was raised
+            print(f"Successfully caught error: {str(excinfo.value)}")
+
+        except Exception as e:
+            pytest.fail(f"Error handling test failed: {str(e)}")

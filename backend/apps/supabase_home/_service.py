@@ -191,6 +191,11 @@ class SupabaseService:
             logger.error(f"Supabase request exception: {str(e)}")
             raise SupabaseError(f"Request error: {str(e)}")
 
+        except SupabaseAuthError as e:
+            # Re-raise SupabaseAuthError without wrapping it in a generic Exception
+            logger.error(f"Authentication error being re-raised: {str(e)}")
+            raise
+
         except Exception as e:
             logger.exception(f"Unexpected error during Supabase request: {str(e)}")
             raise Exception(f"Unexpected error during Supabase request: {str(e)}")

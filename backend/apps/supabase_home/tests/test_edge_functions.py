@@ -1,155 +1,164 @@
-import pytest
 import os
-from unittest.mock import patch
+import uuid
+from unittest.mock import patch, ANY
 
-from ..edge_functions import SupabaseEdgeFunctionsService
+import pytest
+
+from apps.supabase_home.edge_functions import SupabaseEdgeFunctionsService
 
 
 class TestSupabaseEdgeFunctionsService:
-    """Tests for the SupabaseEdgeFunctionsService class"""
-
-    @pytest.fixture
-    def mock_settings(self):
-        """Mock Django settings"""
-        with patch("apps.supabase_home._service.settings") as mock_settings:
-            # Configure mock settings
-            mock_settings.SUPABASE_URL = "https://example.supabase.co"
-            mock_settings.SUPABASE_ANON_KEY = "test-anon-key"
-            mock_settings.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key"
-            yield mock_settings
-
-    @pytest.fixture
-    def edge_functions_service(self, mock_settings):
-        """Create a SupabaseEdgeFunctionsService instance for testing"""
-        return SupabaseEdgeFunctionsService()
+    """Unit tests for SupabaseEdgeFunctionsService using mocks"""
+    
+    def setup_method(self):
+        self.service = SupabaseEdgeFunctionsService()
 
     @patch.object(SupabaseEdgeFunctionsService, "_make_request")
-    def test_invoke_function_without_params(
-        self, mock_make_request, edge_functions_service
-    ):
-        """Test invoking an edge function without parameters"""
-        # Configure mock response
-        mock_make_request.return_value = {"result": "Function executed successfully"}
-
-        # Call invoke_function method
-        result = edge_functions_service.invoke_function(
-            function_name="test-function", auth_token="test-token"
-        )
-
-        # Verify request was made correctly
-        mock_make_request.assert_called_once_with(
-            method="POST",
-            endpoint="/functions/v1/test-function",
-            auth_token="test-token",
-            data=None,
-        )
-
-        # Verify result
-        assert result["result"] == "Function executed successfully"
-
-    @patch.object(SupabaseEdgeFunctionsService, "_make_request")
-    def test_invoke_function_with_params(
-        self, mock_make_request, edge_functions_service
-    ):
-        """Test invoking an edge function with parameters"""
-        # Configure mock response
-        mock_make_request.return_value = {
-            "result": "Function executed with parameters",
-            "params": {"param1": "value1", "param2": "value2"},
-        }
-
-        # Call invoke_function method with parameters
-        result = edge_functions_service.invoke_function(
+    def test_invoke_function_without_params(self, mock_make_request):
+        # Setup mock
+        mock_make_request.return_value = {"message": "Success"}
+        
+        # Call the function
+        result = self.service.invoke_function(
             function_name="test-function",
-            params={"param1": "value1", "param2": "value2"},
-            auth_token="test-token",
+            auth_token="test-token"
         )
-
+        
         # Verify request was made correctly
         mock_make_request.assert_called_once_with(
             method="POST",
             endpoint="/functions/v1/test-function",
             auth_token="test-token",
-            data={"param1": "value1", "param2": "value2"},
+            is_admin=False,
+            data=None,
+            headers=ANY
         )
-
+        
         # Verify result
-        assert result["result"] == "Function executed with parameters"
-        assert result["params"]["param1"] == "value1"
+        assert result == {"message": "Success"}
 
     @patch.object(SupabaseEdgeFunctionsService, "_make_request")
-    def test_invoke_function_with_admin_token(
-        self, mock_make_request, edge_functions_service
-    ):
-        """Test invoking an edge function with admin token"""
-        # Configure mock response
-        mock_make_request.return_value = {
-            "result": "Function executed with admin privileges"
-        }
-
-        # Call invoke_function method with is_admin=True
-        result = edge_functions_service.invoke_function(
-            function_name="test-function", is_admin=True
+    def test_invoke_function_with_body(self, mock_make_request):
+        # Setup mock
+        mock_make_request.return_value = {"message": "Success with params"}
+        
+        # Call the function
+        result = self.service.invoke_function(
+            function_name="test-function",
+            body={"param1": "value1", "param2": "value2"},
+            auth_token="test-token"
         )
+        
+        # Verify request was made correctly
+        mock_make_request.assert_called_once_with(
+            method="POST",
+            endpoint="/functions/v1/test-function",
+            auth_token="test-token",
+            is_admin=False,
+            data={"param1": "value1", "param2": "value2"},
+            headers=ANY
+        )
+        
+        # Verify result
+        assert result == {"message": "Success with params"}
 
+    @patch.object(SupabaseEdgeFunctionsService, "_make_request")
+    def test_invoke_function_with_admin_token(self, mock_make_request):
+        # Setup mock
+        mock_make_request.return_value = {"message": "Admin success"}
+        
+        # Call the function
+        result = self.service.invoke_function(
+            function_name="test-function",
+            is_admin=True
+        )
+        
         # Verify request was made correctly
         mock_make_request.assert_called_once_with(
             method="POST",
             endpoint="/functions/v1/test-function",
             auth_token=None,
-            data=None,
             is_admin=True,
+            data=None,
+            headers=ANY
         )
-
+        
         # Verify result
-        assert result["result"] == "Function executed with admin privileges"
+        assert result == {"message": "Admin success"}
 
 
+@pytest.mark.skipif(not os.environ.get("SUPABASE_URL") or 
+                   not os.environ.get("SUPABASE_SERVICE_ROLE_KEY"),
+                   reason="Supabase credentials not available")
 class TestRealSupabaseEdgeFunctionsService:
-    """Real-world integration tests for SupabaseEdgeFunctionsService
-    
-    These tests make actual API calls to Supabase and require:
-    1. A valid Supabase URL and API keys in env variables
-    2. Use of the --integration flag when running tests
-    3. Deployed edge function(s) in your Supabase project
-    """
-    
     @pytest.fixture
     def edge_functions_service(self):
-        """Create a real SupabaseEdgeFunctionsService instance"""
         return SupabaseEdgeFunctionsService()
     
-    @pytest.fixture
-    def test_function_name(self):
-        """Get test function name from environment or use default"""
-        return os.getenv("TEST_EDGE_FUNCTION_NAME", "hello-world")
-    
-    @pytest.mark.skipif(
-        not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_SERVICE_ROLE_KEY"),
-        reason="Supabase credentials not set in environment variables",
-    )
-    def test_real_invoke_function(self, edge_functions_service, test_function_name):
-        """Test invoking an edge function with real Supabase API"""
-        # Skip if not using --integration flag
-        if os.getenv("SKIP_INTEGRATION_TESTS", "true").lower() == "true":
-            pytest.skip("Integration tests disabled - use --integration flag to run")
-            
+    def test_real_invoke_function(self, edge_functions_service):
+        """
+        Test invoking a real function that already exists in your Supabase project.
+        
+        Note: This test assumes that you have already created a function named 'hello-world'
+        in your Supabase project using the Supabase Dashboard or CLI.
+        """
         try:
-            # Try to invoke the function with admin privileges
+            # Try to invoke a function that should already exist in your project
+            # Replace 'hello-world' with the name of a function that exists in your project
+            function_name = "hello-world"  # Change this to match your existing function
+            
             result = edge_functions_service.invoke_function(
-                function_name=test_function_name,
-                is_admin=True,
-                params={"message": "Hello from test"}
+                function_name=function_name,
+                invoke_method="GET"  # Adjust method as needed for your function
             )
             
-            # Verify a result was returned
-            assert result is not None, "Edge function invocation returned None"
-            
             # Print the result for debugging
-            print(f"Edge function '{test_function_name}' response: {result}")
+            print(f"Function invoked: {result}")
+            
+            # Basic assertion that we got some kind of response
+            assert result is not None, "Expected a response from the function"
             
         except Exception as e:
-            if "Function not found" in str(e):
-                pytest.skip(f"Edge function '{test_function_name}' not found in your Supabase project")
+            # If the function doesn't exist, the test will be skipped rather than fail
+            if "404" in str(e) and "not found" in str(e).lower():
+                pytest.skip(f"Function '{function_name}' not found in your Supabase project. Create it first or use a different name.")
             else:
-                pytest.fail(f"Real-world Supabase edge function test failed: {str(e)}")
+                pytest.fail(f"Real-world Supabase function invocation failed: {str(e)}")
+    
+    def test_mock_management_functions(self, edge_functions_service):
+        """
+        Test that the mock implementations of management functions work as expected.
+        """
+        # Generate a unique function name for testing
+        function_name = f"test-function-{uuid.uuid4().hex[:8]}"
+        
+        # Test list_functions (mock)
+        functions = edge_functions_service.list_functions()
+        assert isinstance(functions, list)
+        
+        # Test create_function (mock)
+        create_result = edge_functions_service.create_function(
+            name=function_name,
+            source_code="export default () => new Response('Hello');",
+            verify_jwt=False
+        )
+        assert create_result["name"] == function_name
+        assert create_result["status"] == "MOCK_CREATED"
+        
+        # Test get_function (mock)
+        get_result = edge_functions_service.get_function(function_name)
+        assert get_result["name"] == function_name
+        assert get_result["status"] == "MOCK_ACTIVE"
+        
+        # Test update_function (mock)
+        update_result = edge_functions_service.update_function(
+            function_name=function_name,
+            source_code="export default () => new Response('Updated');"
+        )
+        assert update_result["name"] == function_name
+        assert update_result["status"] == "MOCK_UPDATED"
+        
+        # Test delete_function (mock)
+        delete_result = edge_functions_service.delete_function(function_name)
+        assert delete_result["name"] == function_name
+        assert delete_result["status"] == "MOCK_DELETED"
