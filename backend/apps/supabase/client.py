@@ -3,6 +3,7 @@ from .database import SupabaseDatabaseService
 from .storage import SupabaseStorageService
 from .edge_functions import SupabaseEdgeFunctionsService
 from .realtime import SupabaseRealtimeService
+from .init import get_supabase_client
 
 class SupabaseClient:
     """
@@ -17,6 +18,10 @@ class SupabaseClient:
     """
     
     def __init__(self):
+        # Initialize the raw supabase client
+        self._raw_client = get_supabase_client()
+        
+        # Initialize service classes
         self.auth = SupabaseAuthService()
         self.database = SupabaseDatabaseService()
         self.storage = SupabaseStorageService()
@@ -67,6 +72,18 @@ class SupabaseClient:
             SupabaseRealtimeService instance
         """
         return self.realtime
+    
+    def get_raw_client(self):
+        """
+        Get the raw Supabase client from supabase-py.
+        
+        This provides direct access to the underlying client if needed for
+        advanced operations not covered by the service classes.
+        
+        Returns:
+            supabase.Client instance
+        """
+        return self._raw_client
 
 # Create a singleton instance
 supabase = SupabaseClient()

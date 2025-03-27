@@ -38,9 +38,22 @@ class SupabaseService:
     """
     
     def __init__(self):
+        # Get configuration from settings
         self.base_url = settings.SUPABASE_URL
         self.anon_key = settings.SUPABASE_ANON_KEY
         self.service_role_key = settings.SUPABASE_SERVICE_ROLE_KEY
+        
+        # Validate required settings
+        if not self.base_url:
+            logger.error("SUPABASE_URL is not set in settings")
+            raise ValueError("SUPABASE_URL is not set in settings")
+            
+        if not self.anon_key:
+            logger.error("SUPABASE_ANON_KEY is not set in settings")
+            raise ValueError("SUPABASE_ANON_KEY is not set in settings")
+            
+        if not self.service_role_key:
+            logger.warning("SUPABASE_SERVICE_ROLE_KEY is not set in settings. Admin operations will not work.")
         
     def _get_headers(self, auth_token: Optional[str] = None, is_admin: bool = False) -> Dict[str, str]:
         """
@@ -62,6 +75,8 @@ class SupabaseService:
             headers['Authorization'] = f'Bearer {auth_token}'
         elif is_admin:
             # Use service role key as bearer token for admin operations
+            if not self.service_role_key:
+                raise SupabaseAuthError("Service role key is required for admin operations")
             headers['Authorization'] = f'Bearer {self.service_role_key}'
             
         return headers
