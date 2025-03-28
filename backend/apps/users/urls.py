@@ -3,11 +3,15 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
 from . import base
-from .views import auth_view, client_view, database_view, edge_functions_view, realtime_view, storage_view
+from .views import auth_view, client_view, database_view, edge_functions_view, realtime_view, storage_view, utility_views
 from .views.creditable_views import utility_view
 
 # Import health check from base if it exists there, otherwise we'll need to find it
 from ..authentication.views import health_check
+
+# Set the app namespace
+app_name = 'users'
+
 router = DefaultRouter()
 router.register(r'users', base.UserViewSet)
 
@@ -19,6 +23,16 @@ urlpatterns = [
     
     # Health check endpoint
     path('health/', health_check, name='health_check'),
+    
+    # Utility endpoints for tests
+    path('utility/health-check/', utility_views.health_check, name='utility-health-check'),
+    path('utility/supabase-connection/', utility_views.check_supabase_connection, name='utility-supabase-connection'),
+    path('utility/ping-supabase/', utility_views.ping_supabase, name='utility-ping-supabase'),
+    path('utility/db-info/', utility_views.get_db_info, name='utility-get-db-info'),
+    path('utility/server-time/', utility_views.get_server_time, name='utility-get-server-time'),
+    path('utility/system-info/', utility_views.get_system_info, name='utility-get-system-info'),
+    path('utility/auth-config/', utility_views.get_auth_config, name='utility-get-auth-config'),
+    path('utility/storage-config/', utility_views.get_storage_config, name='utility-get-storage-config'),
     
     # Auth endpoints
     path('auth/anonymous/', auth_view.create_anonymous_user, name='create_anonymous_user'),

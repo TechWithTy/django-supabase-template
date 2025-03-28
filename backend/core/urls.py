@@ -10,7 +10,7 @@ urlpatterns = [
     
     # API endpoints
     path('api/', include('apps.authentication.urls')),
-    path('api/', include('apps.users.urls')),
+    path('api/', include('apps.users.urls', namespace='users')),
     path('api/', include('apps.credits.urls')),
     
     # Prometheus metrics

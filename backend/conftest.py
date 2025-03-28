@@ -1,5 +1,16 @@
 import logging
 import warnings
+import os
+import sys
+import django
+from django.conf import settings
+
+# Add the project root to the Python path
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+
+# Setup Django
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
+django.setup()
 
 # Configure asyncio fixture scope to avoid deprecation warning
 pytest_plugins = ["asyncio"]
