@@ -4,7 +4,7 @@ import django
 import pytest
 from pathlib import Path
 from utils.sensitive import load_environment_files
-from apps.supabase_home.tests._verify_supabase_conntection import run_verification
+from apps.supabase_home.tests._verify_supabase_connection import run_verification
 import uuid
 
 # Add the backend directory to the Python path
