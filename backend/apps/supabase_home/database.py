@@ -39,7 +39,8 @@ class SupabaseDatabaseService(SupabaseService):
         # Add filters if provided
         if filters:
             for key, value in filters.items():
-                params[key] = value
+                # Format filter with eq operator for Supabase REST API
+                params[f"{key}"] = f"eq.{value}"
                 
         # Add ordering if provided
         if order:
@@ -108,8 +109,13 @@ class SupabaseDatabaseService(SupabaseService):
             Updated data
         """
         endpoint = f"/rest/v1/{table}"
-        params = filters
+        params = {}
         
+        # Format filters with eq operator for Supabase REST API
+        if filters:
+            for key, value in filters.items():
+                params[f"{key}"] = f"eq.{value}"
+                
         return self._make_request(
             method="PATCH",
             endpoint=endpoint,
@@ -152,8 +158,13 @@ class SupabaseDatabaseService(SupabaseService):
             Deleted data
         """
         endpoint = f"/rest/v1/{table}"
-        params = filters
+        params = {}
         
+        # Format filters with eq operator for Supabase REST API
+        if filters:
+            for key, value in filters.items():
+                params[f"{key}"] = f"eq.{value}"
+                
         return self._make_request(
             method="DELETE",
             endpoint=endpoint,

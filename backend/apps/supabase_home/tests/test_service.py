@@ -84,6 +84,7 @@ class TestSupabaseServiceLive:
         # If we've tried all endpoints and none worked, skip the test
         pytest.skip("Could not find a working endpoint for health check")
 
+
     def test_make_request_rest_api(self, service, skip_if_no_env_vars):
         """Test making a request to the REST API"""
         try:
