@@ -4,6 +4,8 @@ import uuid
 import time
 import random
 import string
+import asyncio
+from pytest_asyncio import fixture
 
 from ..init import get_supabase_client
 
@@ -41,7 +43,7 @@ def diagnose_supabase_realtime_issue():
         return issues
 
 
-@pytest.mark.integration
+
 class TestSupabaseRealtime:
     """Tests for Supabase Realtime using the official client
     
@@ -71,7 +73,7 @@ class TestSupabaseRealtime:
     
     @pytest.fixture
     def auth_token(self, supabase_client, test_user_credentials):
-        """Create a test user and return the auth token"""
+        """Create a test user and return the auth tokens"""
         print("\n=== DEBUG: Starting auth_token fixture ===")
         print(f"Test credentials: {test_user_credentials}")
         
@@ -84,12 +86,13 @@ class TestSupabaseRealtime:
             })
             print(f"Sign up result: {signup_result}")
             
-            # Extract the access token
+            # Extract the session tokens
             session = signup_result.session
             if session:
                 access_token = session.access_token
+                refresh_token = session.refresh_token
                 print(f"Access token obtained from signup: {bool(access_token)}")
-                return access_token
+                return {"access_token": access_token, "refresh_token": refresh_token}
             else:
                 print("No session in signup result, trying sign in...")
                 
@@ -101,8 +104,9 @@ class TestSupabaseRealtime:
                 
                 if signin_result.session:
                     access_token = signin_result.session.access_token
+                    refresh_token = signin_result.session.refresh_token
                     print(f"Access token obtained from signin: {bool(access_token)}")
-                    return access_token
+                    return {"access_token": access_token, "refresh_token": refresh_token}
                 else:
                     print("No session in signin result")
                     return None
@@ -121,8 +125,9 @@ class TestSupabaseRealtime:
                 
                 if signin_result.session:
                     access_token = signin_result.session.access_token
+                    refresh_token = signin_result.session.refresh_token
                     print(f"Access token obtained from signin: {bool(access_token)}")
-                    return access_token
+                    return {"access_token": access_token, "refresh_token": refresh_token}
                 else:
                     print("No session in signin result")
                     return None
@@ -137,76 +142,247 @@ class TestSupabaseRealtime:
         """Generate a unique test channel name"""
         return f"test-channel-{uuid.uuid4()}"
     
-    def test_realtime_subscribe_and_broadcast(self, supabase_client, test_channel_name, realtime_issues, auth_token):
-        """Test subscribing to a channel and broadcasting a message using the official client"""
-        # Skip test if no auth token is available
-        if not auth_token:
-            pytest.skip("No authentication token available. Cannot test Realtime API without authentication.")
+    # Add an async fixture for the async Supabase client
+    @fixture
+    async def async_supabase_client(self):
+        """Get the async Supabase client"""
+        from supabase.lib.client_options import ClientOptions
+        from supabase._async.client import AsyncClient
+        
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_ANON_KEY")
+        
+        # Create async client directly
+        options = ClientOptions(schema="public")
+        return AsyncClient(supabase_url, supabase_key, options=options)
+    
+    # Add an async fixture for auth token
+    @fixture
+    async def async_auth_token(self, async_supabase_client, test_user_credentials):
+        """Create a test user and return the auth tokens using the async client"""
+        print("\n=== DEBUG: Starting async_auth_token fixture ===")
+        print(f"Test credentials: {test_user_credentials}")
+        
+        try:
+            # Sign up a new user
+            print("Attempting to sign up user with async client...")
+            # Use the sync client as a fallback since we're having issues with the async methods
+            from ..init import get_supabase_client
+            sync_client = get_supabase_client()
             
+            signup_result = sync_client.auth.sign_up({
+                "email": test_user_credentials["email"],
+                "password": test_user_credentials["password"]
+            })
+            print(f"Sync sign up result: {signup_result}")
+            
+            # Extract the session tokens
+            session = signup_result.session
+            if session:
+                access_token = session.access_token
+                refresh_token = session.refresh_token
+                print(f"Access token obtained from sync signup: {bool(access_token)}")
+                return {"access_token": access_token, "refresh_token": refresh_token}
+            else:
+                print("No session in sync signup result, trying sign in...")
+                
+                # Try to sign in
+                signin_result = sync_client.auth.sign_in_with_password({
+                    "email": test_user_credentials["email"],
+                    "password": test_user_credentials["password"]
+                })
+                
+                if signin_result.session:
+                    access_token = signin_result.session.access_token
+                    refresh_token = signin_result.session.refresh_token
+                    print(f"Access token obtained from sync signin: {bool(access_token)}")
+                    return {"access_token": access_token, "refresh_token": refresh_token}
+                else:
+                    print("No session in sync signin result")
+                    return None
+                
+        except Exception as e:
+            print(f"Error in sync signup: {str(e)}")
+            print(f"Exception type: {type(e).__name__}")
+            
+            # Try to sign in if user might already exist
+            try:
+                print("User may already exist. Attempting to sign in with sync client...")
+                from ..init import get_supabase_client
+                sync_client = get_supabase_client()
+                
+                signin_result = sync_client.auth.sign_in_with_password({
+                    "email": test_user_credentials["email"],
+                    "password": test_user_credentials["password"]
+                })
+                
+                if signin_result.session:
+                    access_token = signin_result.session.access_token
+                    refresh_token = signin_result.session.refresh_token
+                    print(f"Access token obtained from sync signin: {bool(access_token)}")
+                    return {"access_token": access_token, "refresh_token": refresh_token}
+                else:
+                    print("No session in sync signin result")
+                    return None
+                    
+            except Exception as signin_error:
+                print(f"Error signing in with sync client: {str(signin_error)}")
+                print(f"Exception type: {type(signin_error).__name__}")
+                return None
+    
+    # Convert the test to use a hybrid approach - use the sync client for authentication and the async client only for Realtime functionality
+    @pytest.mark.asyncio
+    async def test_async_realtime_subscribe_and_broadcast(self, async_supabase_client, test_channel_name, realtime_issues, async_auth_token):
+        """Test subscribing to a channel and broadcasting a message using the async client"""
+        # Instead of skipping, print a warning and continue to see actual errors
+        if async_auth_token is None:
+            print("WARNING: No auth token available. Test will likely fail but will show exact errors.")
+
         # Report any setup issues but continue with the test
         if realtime_issues:
             for issue in realtime_issues:
                 print(f"WARNING: {issue}")
             print("\nContinuing with test despite setup issues...")
         
-        # Set the auth token for the client
-        supabase_client.auth.set_session(access_token=auth_token)
-        
+        channel = None
         try:
-            # Create a channel with the client
-            channel = supabase_client.channel(test_channel_name, {
+            # Create a channel with the async client
+            # For authenticated channels, use the 'private' option
+            channel = async_supabase_client.channel(test_channel_name, {
                 "config": {
                     "broadcast": {
                         "self": True
-                    },
-                    "presence": {
-                        "key": "user1"
                     }
                 }
             })
             
-            # Track received messages
+            # Print available methods to debug
+            print(f"Channel type: {type(channel)}")
+            print(f"Available methods: {[m for m in dir(channel) if not m.startswith('_')]}")
+            
+            # Setup a message receiver
             received_messages = []
             
-            # Subscribe to the channel
-            def handle_broadcast(payload):
+            # Define the callback function to handle messages
+            async def handle_broadcast(payload):
                 print(f"Received message: {payload}")
                 received_messages.append(payload)
             
-            # Subscribe to the 'broadcast' event
-            channel.on('broadcast', handle_broadcast)
-            
-            # Connect to the channel
-            channel.subscribe()
-            
-            # Wait for subscription to be established
-            time.sleep(2)
-            
-            # Broadcast a message
-            test_message = {"type": "test", "content": f"Test message at {time.time()}", "sender": "test-user"}
-            channel.send({
-                "type": "broadcast",
-                "event": "broadcast",
-                "payload": test_message
-            })
-            
-            # Wait for message to be received
-            max_wait = 10  # seconds
-            start_time = time.time()
-            while not received_messages and time.time() - start_time < max_wait:
-                time.sleep(0.5)
+            # Define the subscription callback
+            async def on_subscribe(status, err=None):
+                print(f"Subscription status: {status}")
+                print(f"Subscription error: {err}")
                 
-            # Unsubscribe from the channel
-            channel.unsubscribe()
+                # Only send message if successfully subscribed
+                if status == "SUBSCRIBED" or status == "CHANNEL_SUBSCRIBED":
+                    try:
+                        # According to docs, we should use send_broadcast
+                        if hasattr(channel, 'send_broadcast'):
+                            await channel.send_broadcast(
+                                'test-event',
+                                {"message": "Hello from async test!"}
+                            )
+                            print("Message sent using channel.send_broadcast()")
+                        else:
+                            print("Channel does not have send_broadcast method. Available methods:")
+                            print([m for m in dir(channel) if not m.startswith('_')])
+                            assert False, "send_broadcast method not found on channel"
+                    except Exception as broadcast_error:
+                        print(f"Error during broadcast in subscription callback: {broadcast_error}")
+                        print(f"Error type: {type(broadcast_error).__name__}")
             
-            # Verify that we received the message
-            assert len(received_messages) > 0, f"No messages received after waiting {max_wait} seconds"
-            assert received_messages[0] == test_message, "Received message doesn't match sent message"
+            # For AsyncRealtimeChannel, we use on_broadcast instead of on
+            channel.on_broadcast(
+                'test-event',  # Event name
+                handle_broadcast  # Callback function
+            )
             
-            print("Successfully subscribed to channel and received broadcast message")
+            # Subscribe to the channel with the callback
+            await channel.subscribe(on_subscribe)
+            print("Subscribed to channel")
+            
+            # Wait for the message to be received
+            start_time = time.time()
+            timeout = 5  # 5 seconds timeout
+            
+            while not received_messages and time.time() - start_time < timeout:
+                await asyncio.sleep(0.1)
+                print("Waiting for message...")
+            
+            # Check if we received any messages
+            if len(received_messages) > 0:
+                print(f"Received messages: {received_messages}")
+                assert received_messages[0]["message"] == "Hello from async test!"
+                print("Test passed: Successfully received the message")
+            else:
+                print("No messages were received. This could be due to:")
+                print("1. Realtime feature not being enabled in your Supabase project")
+                print("2. Missing RLS policies for Realtime")
+                print("3. Network issues or timeouts")
+                
+                # Check if we need to set up RLS policies
+                print("\nMake sure you have set up the correct RLS policies for Realtime.")
+                print("You may need to add the following policies in your Supabase SQL editor:")
+                print("""
+                -- Enable RLS on the realtime.messages table
+                ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY;
+                
+                -- Allow authenticated users to receive broadcasts
+                CREATE POLICY "Allow authenticated users to receive broadcasts" 
+                ON realtime.messages
+                FOR SELECT
+                TO authenticated
+                USING (true);
+                
+                -- Allow authenticated users to send broadcasts
+                CREATE POLICY "Allow authenticated users to send broadcasts" 
+                ON realtime.messages
+                FOR INSERT
+                TO authenticated
+                WITH CHECK (true);
+                """)
+                
+                # Fail the test instead of skipping
+                assert False, "No messages received - check Realtime configuration"
             
         except Exception as e:
-            pytest.fail(f"Error testing Realtime API: {str(e)}\n\nPossible causes:\n" +
-                       "1. Realtime feature is not enabled in your Supabase project\n" +
-                       "2. Your auth token doesn't have permission to access Realtime API\n" +
-                       "3. You need to enable the appropriate RLS policies for Realtime")
+            print(f"Error in async test: {str(e)}")
+            print(f"Exception type: {type(e).__name__}")
+            
+            # If we get an error about permissions, provide more helpful information
+            if "permission" in str(e).lower() or "unauthorized" in str(e).lower():
+                print("\nThis might be a permissions issue. Make sure you have set up the correct RLS policies for Realtime.")
+                print("You may need to add the following policies in your Supabase SQL editor:")
+                print("""
+                -- Enable RLS on the realtime.messages table
+                ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY;
+                
+                -- Allow authenticated users to receive broadcasts
+                CREATE POLICY "Allow authenticated users to receive broadcasts" 
+                ON realtime.messages
+                FOR SELECT
+                TO authenticated
+                USING (true);
+                
+                -- Allow authenticated users to send broadcasts
+                CREATE POLICY "Allow authenticated users to send broadcasts" 
+                ON realtime.messages
+                FOR INSERT
+                TO authenticated
+                WITH CHECK (true);
+                """)
+            
+            raise
+        finally:
+            # Ensure we properly clean up the channel to avoid asyncio errors
+            if channel:
+                try:
+                    # Make sure we unsubscribe from the channel
+                    await channel.unsubscribe()
+                    # Remove the channel
+                    await async_supabase_client.remove_channel(channel)
+                except Exception as cleanup_error:
+                    print(f"Warning during cleanup: {cleanup_error}")
+                    
+            # Add a small delay to allow tasks to complete
+            await asyncio.sleep(0.5)
