@@ -46,13 +46,16 @@ class SupabaseAuthService(SupabaseService):
         """
         return self._make_request(method="POST", endpoint="/auth/v1/signup", data={})
 
-    def sign_in_with_email(self, email: str, password: str) -> Dict[str, Any]:
+    def sign_in_with_email(
+        self, email: str, password: str, is_admin: bool = False
+    ) -> Dict[str, Any]:
         """
         Sign in a user with email and password.
 
         Args:
             email: User's email address
             password: User's password
+            is_admin: Whether to use the service role key (admin access)
 
         Returns:
             Session data including user and tokens
@@ -61,6 +64,7 @@ class SupabaseAuthService(SupabaseService):
             method="POST",
             endpoint="/auth/v1/token?grant_type=password",
             data={"email": email, "password": password},
+            is_admin=is_admin,
         )
 
     def sign_in_with_id_token(self, provider: str, id_token: str) -> Dict[str, Any]:
@@ -161,7 +165,7 @@ class SupabaseAuthService(SupabaseService):
         )
 
     def reset_password(
-        self, email: str, redirect_url: Optional[str] = None
+        self, email: str, redirect_url: Optional[str] = None, is_admin: bool = False
     ) -> Dict[str, Any]:
         """
         Send a password reset email to the user.
@@ -169,6 +173,7 @@ class SupabaseAuthService(SupabaseService):
         Args:
             email: User's email address
             redirect_url: URL to redirect after password reset
+            is_admin: Whether to use the service role key (admin access)
 
         Returns:
             Success message
@@ -177,7 +182,7 @@ class SupabaseAuthService(SupabaseService):
         if redirect_url:
             data["redirect_to"] = redirect_url
 
-        return self._make_request(method="POST", endpoint="/auth/v1/recover", data=data)
+        return self._make_request(method="POST", endpoint="/auth/v1/recover", data=data, is_admin=is_admin)
 
     def get_session(self, auth_token: str) -> Dict[str, Any]:
         """
