@@ -98,6 +98,11 @@ urlpatterns = [
     path('storage/url/public/', storage_view.get_public_url, name='get_public_url'),
     
     # Client endpoints
+    # Client info
+    path('client/url/', client_view.get_supabase_url, name='client-url'),
+    path('client/anon-key/', client_view.get_supabase_anon_key, name='client-anon-key'),
+    path('client/info/', client_view.get_supabase_client_info, name='client-info'),
+    
     # Database
     path('client/db/query/', client_view.execute_query, name='execute_query'),
     

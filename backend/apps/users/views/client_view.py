@@ -10,6 +10,64 @@ from rest_framework.response import Response
 from apps.supabase_home.client import supabase
 
 
+# Client info endpoints
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def get_supabase_url(request: Request) -> Response:
+    """
+    Get the Supabase URL for client-side usage.
+    """
+    try:
+        return Response(
+            {"supabase_url": settings.SUPABASE_URL},
+            status=status.HTTP_200_OK,
+        )
+    except Exception as e:
+        return Response(
+            {"error": f"Failed to get Supabase URL: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def get_supabase_anon_key(request: Request) -> Response:
+    """
+    Get the Supabase anonymous key for client-side usage.
+    """
+    try:
+        return Response(
+            {"supabase_anon_key": settings.SUPABASE_ANON_KEY},
+            status=status.HTTP_200_OK,
+        )
+    except Exception as e:
+        return Response(
+            {"error": f"Failed to get Supabase anon key: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def get_supabase_client_info(request: Request) -> Response:
+    """
+    Get the Supabase client info (URL and anon key) for client-side usage.
+    """
+    try:
+        return Response(
+            {
+                "supabase_url": settings.SUPABASE_URL,
+                "supabase_anon_key": settings.SUPABASE_ANON_KEY,
+            },
+            status=status.HTTP_200_OK,
+        )
+    except Exception as e:
+        return Response(
+            {"error": f"Failed to get Supabase client info: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
 # Database views
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
