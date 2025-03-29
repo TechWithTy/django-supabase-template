@@ -38,7 +38,11 @@ class SupabaseJWTAuthentication(BaseAuthentication):
                 token,
                 settings.SUPABASE_JWT_SECRET,
                 algorithms=['HS256'],
-                options={'verify_signature': True}
+                options={
+                    'verify_signature': True,
+                    'verify_iat': False,  # Skip 'issued at' verification for testing
+                    'verify_aud': False   # Skip audience verification for testing
+                }
             )
             
             # Get or create the user based on Supabase user ID

@@ -1,5 +1,6 @@
-from typing import Any, Dict, List, Optional, Union, BinaryIO
+from typing import Any, Dict, List, Optional, Union, BinaryIO, Tuple
 import os
+import requests
 
 from ._service import SupabaseService
 
@@ -61,7 +62,7 @@ class SupabaseStorageService(SupabaseService):
         )
 
     def get_bucket(
-        self, bucket_id: str, auth_token: Optional[str] = None
+        self, bucket_id: str, auth_token: Optional[str] = None, is_admin: bool = False
     ) -> Dict[str, Any]:
         """
         Retrieve a bucket by ID.
@@ -69,6 +70,7 @@ class SupabaseStorageService(SupabaseService):
         Args:
             bucket_id: Bucket identifier
             auth_token: Optional JWT token for authenticated requests
+            is_admin: Whether to use admin privileges
 
         Returns:
             Bucket data
@@ -77,6 +79,7 @@ class SupabaseStorageService(SupabaseService):
             method="GET",
             endpoint="/storage/v1/bucket/" + bucket_id,
             auth_token=auth_token,
+            is_admin=is_admin,
         )
 
     def list_buckets(
@@ -226,25 +229,91 @@ class SupabaseStorageService(SupabaseService):
             else:
                 headers["Content-Type"] = "application/octet-stream"
 
-        # Remove Content-Type: application/json from headers for file upload
-        # as we're sending binary data, not JSON
-        if headers.get("Content-Type") != "application/json":
-            headers.pop("Content-Type", None)
-
         try:
-            import requests
-            
             # For file uploads, we need to use requests directly instead of _make_request
             # because we're not sending JSON data
+            import logging
+            logger = logging.getLogger("apps.supabase_home")
+            logger.info(f"Uploading file to {bucket_id}/{path} with content type: {headers.get('Content-Type')}")
+            logger.info(f"Headers: {headers}")
+            
             response = requests.post(url, headers=headers, data=file_data, timeout=30)
+            
+            # Log the response status and headers
+            logger.info(f"Upload response status: {response.status_code}")
+            logger.info(f"Upload response headers: {response.headers}")
+            
+            # Log the response content for debugging
+            if response.status_code >= 400:
+                logger.error(f"Upload error response: {response.text}")
+            
             response.raise_for_status()
             
             return response.json()
         except requests.exceptions.RequestException as e:
             # Log the error and re-raise with more context
             import logging
-            logger = logging.getLogger(" apps.supabase_home")
+            logger = logging.getLogger("apps.supabase_home")
             logger.error(f"Error uploading file to {bucket_id}/{path}: {str(e)}")
+            
+            # Log request details
+            logger.error(f"Request URL: {url}")
+            logger.error(f"Request headers: {headers}")
+            
+            from ._service import SupabaseAPIError
+            error_details = {}
+            if hasattr(e, "response") and e.response is not None:
+                try:
+                    error_details = e.response.json()
+                    logger.error(f"Error response JSON: {error_details}")
+                except ValueError:
+                    error_details = {"status": e.response.status_code, "text": e.response.text}
+                    logger.error(f"Error response text: {e.response.text}")
+            
+            raise SupabaseAPIError(
+                message=f"Error uploading file: {str(e)}",
+                status_code=getattr(e.response, "status_code", None) if hasattr(e, "response") else None,
+                details=error_details
+            )
+
+    def download_file(
+        self, bucket_id: str, path: str, auth_token: Optional[str] = None, is_admin: bool = False
+    ) -> Tuple[bytes, str]:
+        """
+        Download a file from a bucket.
+
+        Args:
+            bucket_id: Bucket identifier
+            path: File path
+            auth_token: Optional JWT token for authenticated requests
+            is_admin: Whether to use admin privileges
+
+        Returns:
+            Tuple of (file_content, content_type)
+        """
+        try:
+            url = f"{self.base_url}/storage/v1/object/{bucket_id}/{path}"
+            headers = self._get_headers(auth_token, is_admin)
+            
+            # For file downloads, we need to use requests directly instead of _make_request
+            # because we want the raw response content
+            response = requests.get(url, headers=headers, timeout=30)
+            response.raise_for_status()
+            
+            # Get content type from response headers or guess from file extension
+            content_type = response.headers.get('Content-Type')
+            if not content_type:
+                import mimetypes
+                content_type, _ = mimetypes.guess_type(path)
+                if not content_type:
+                    content_type = "application/octet-stream"
+            
+            return response.content, content_type
+        except requests.exceptions.RequestException as e:
+            # Log the error and re-raise with more context
+            import logging
+            logger = logging.getLogger("apps.supabase_home")
+            logger.error(f"Error downloading file from {bucket_id}/{path}: {str(e)}")
             
             from ._service import SupabaseAPIError
             error_details = {}
@@ -255,35 +324,10 @@ class SupabaseStorageService(SupabaseService):
                     error_details = {"status": e.response.status_code, "text": e.response.text}
             
             raise SupabaseAPIError(
-                message=f"Error uploading file: {str(e)}",
+                message=f"Error downloading file: {str(e)}",
                 status_code=getattr(e.response, "status_code", None) if hasattr(e, "response") else None,
                 details=error_details
             )
-
-    def download_file(
-        self, bucket_id: str, path: str, auth_token: Optional[str] = None
-    ) -> bytes:
-        """
-        Download a file from a bucket.
-
-        Args:
-            bucket_id: Bucket identifier
-            path: File path within the bucket
-            auth_token: Optional JWT token for authenticated requests
-
-        Returns:
-            File data as bytes
-        """
-        url = self.base_url + "/storage/v1/object/" + bucket_id + "/" + path
-
-        headers = self._get_headers(auth_token)
-
-        import requests
-
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-
-        return response.content
 
     def list_files(
         self,
@@ -293,6 +337,7 @@ class SupabaseStorageService(SupabaseService):
         offset: int = 0,
         sort_by: Optional[Dict[str, str]] = None,
         auth_token: Optional[str] = None,
+        is_admin: bool = False,
     ) -> Dict[str, Any]:
         """
         List files in a bucket.
@@ -304,21 +349,50 @@ class SupabaseStorageService(SupabaseService):
             offset: Offset for pagination
             sort_by: Optional sorting parameters
             auth_token: Optional JWT token for authenticated requests
+            is_admin: Whether to use service role key (admin access)
 
         Returns:
             List of files
         """
+        import logging
+        logger = logging.getLogger("apps.supabase_home")
+        logger.info(f"Listing files in bucket {bucket_id} with path prefix: {path}")
+        logger.info(f"Using admin access: {is_admin}")
+        
         params = {"prefix": path, "limit": limit, "offset": offset}
+        logger.info(f"Request params: {params}")
 
         if sort_by:
             params["sort_by"] = sort_by
 
-        return self._make_request(
-            method="POST",
-            endpoint="/storage/v1/object/list/" + bucket_id,
-            auth_token=auth_token,
-            data=params,
-        )
+        try:
+            result = self._make_request(
+                method="POST",
+                endpoint="/storage/v1/object/list/" + bucket_id,
+                auth_token=auth_token,
+                is_admin=is_admin,
+                data=params,
+            )
+            logger.info(f"Successfully listed files in bucket {bucket_id}")
+            return result
+        except Exception as e:
+            logger.error(f"Error listing files in bucket {bucket_id}: {str(e)}")
+            # Check if we need to try a different endpoint or method
+            logger.info("Trying alternative endpoint for listing files")
+            try:
+                # Try GET method instead of POST
+                result = self._make_request(
+                    method="GET",
+                    endpoint="/storage/v1/object/list/" + bucket_id,
+                    auth_token=auth_token,
+                    is_admin=is_admin,
+                    params=params,  # Use params instead of data for GET request
+                )
+                logger.info("Successfully listed files using alternative endpoint")
+                return result
+            except Exception as alt_e:
+                logger.error(f"Alternative endpoint also failed: {str(alt_e)}")
+                raise
 
     def move_file(
         self,
@@ -383,8 +457,10 @@ class SupabaseStorageService(SupabaseService):
     def delete_file(
         self,
         bucket_id: str,
-        paths: Union[str, List[str]],
+        paths: Union[str, List[str]] = None,
+        path: str = None,
         auth_token: Optional[str] = None,
+        is_admin: bool = False,
     ) -> Dict[str, Any]:
         """
         Delete files from a bucket.
@@ -392,20 +468,65 @@ class SupabaseStorageService(SupabaseService):
         Args:
             bucket_id: Bucket identifier
             paths: File path or list of file paths to delete
+            path: Alternative parameter name for a single file path
             auth_token: Optional JWT token for authenticated requests
+            is_admin: Whether to use admin privileges
 
         Returns:
             Success message
         """
+        import logging
+        logger = logging.getLogger("apps.supabase_home.storage")
+        logger.info(f"Delete file called with bucket_id: {bucket_id}, paths: {paths}, path: {path}")
+        logger.info(f"Auth token available: {bool(auth_token)}, is_admin: {is_admin}")
+        
+        # Handle both 'path' and 'paths' parameters for backward compatibility
+        if path is not None and paths is None:
+            paths = path
+            logger.info(f"Using path parameter: {path}")
+            
         if isinstance(paths, str):
             paths = [paths]
+            logger.info(f"Converted string path to list: {paths}")
 
-        return self._make_request(
-            method="POST",
-            endpoint="/storage/v1/object/delete/" + bucket_id,
-            auth_token=auth_token,
-            data={"prefixes": paths},
-        )
+        # According to Supabase docs, the API expects a specific format
+        # The key must be exactly 'prefixes' and it must be a list of strings
+        request_data = {"prefixes": paths}
+        logger.info(f"Making request with data: {request_data}")
+
+        try:
+            # Try individual file deletion first if there's only one file
+            if len(paths) == 1 and paths[0]:
+                single_path = paths[0]
+                logger.info(f"Attempting single file deletion for: {single_path}")
+                try:
+                    # Use DELETE method for single file deletion
+                    result = self._make_request(
+                        method="DELETE",
+                        endpoint=f"/storage/v1/object/{bucket_id}/{single_path.lstrip('/')}",
+                        auth_token=auth_token,
+                        is_admin=is_admin
+                    )
+                    logger.info(f"Single file deletion successful: {result}")
+                    return result
+                except Exception as single_delete_error:
+                    logger.warning(f"Single file deletion failed, trying batch delete: {str(single_delete_error)}")
+            
+            # Try batch deletion as fallback or for multiple files
+            logger.info("Attempting batch deletion")
+            result = self._make_request(
+                method="POST",
+                endpoint=f"/storage/v1/bucket/{bucket_id}/remove",  # Corrected endpoint for batch deletion
+                auth_token=auth_token,
+                is_admin=is_admin,
+                data=request_data,
+            )
+            logger.info(f"Batch deletion successful: {result}")
+            return result
+        except Exception as e:
+            logger.error(f"Error in delete_file: {str(e)}")
+            logger.exception("Detailed exception information:")
+            raise
 
     def create_signed_url(
         self,
@@ -505,15 +626,29 @@ class SupabaseStorageService(SupabaseService):
         response = requests.put(signed_url, headers=headers, data=file_data)
         response.raise_for_status()
 
-    def get_public_url(self, bucket_id: str, path: str) -> str:
+    def get_public_url(self, bucket_id: str, path: str, auth_token: Optional[str] = None, is_admin: bool = False) -> str:
         """
-        Get the public URL for a file in a public bucket.
+        Get a public URL for a file in a public bucket.
 
         Args:
             bucket_id: Bucket identifier
             path: File path
+            auth_token: Optional JWT token for authenticated requests
+            is_admin: Whether to use admin privileges
 
         Returns:
             Public URL
         """
-        return self.base_url + "/storage/v1/object/public/" + bucket_id + "/" + path
+        # Check if the bucket exists and is public
+        try:
+            bucket = self.get_bucket(bucket_id, auth_token=auth_token, is_admin=is_admin)
+            if not bucket.get("public", False):
+                raise ValueError(f"Bucket {bucket_id} is not public")
+        except Exception as e:
+            # If we can't verify the bucket is public, we'll still try to generate the URL
+            # but log a warning
+            import logging
+            logger = logging.getLogger("apps.supabase_home")
+            logger.warning(f"Could not verify bucket {bucket_id} is public: {str(e)}")
+
+        return f"{self.base_url}/storage/v1/object/public/{bucket_id}/{path}"

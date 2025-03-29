@@ -81,15 +81,18 @@ class SupabaseService:
             "apikey": self.service_role_key if is_admin else self.anon_key,
         }
 
-        if auth_token:
-            headers["Authorization"] = f"Bearer {auth_token}"
-        elif is_admin:
+        # For storage operations, we need to set the Authorization header correctly
+        # If is_admin is True, we should use the service role key regardless of auth_token
+        if is_admin:
             # Use service role key as bearer token for admin operations
             if not self.service_role_key:
                 raise SupabaseAuthError(
                     "Service role key is required for admin operations"
                 )
             headers["Authorization"] = f"Bearer {self.service_role_key}"
+        elif auth_token:
+            # Use the provided auth token if not in admin mode
+            headers["Authorization"] = f"Bearer {auth_token}"
 
         return headers
 
@@ -133,10 +136,23 @@ class SupabaseService:
         if headers:
             request_headers.update(headers)
 
+        # Enhanced logging for debugging
+        logger.info(f"Making {method} request to {url}")
+        logger.info(f"Headers: {request_headers}")
+        if 'Authorization' in request_headers:
+            auth_header = request_headers['Authorization']
+            logger.info(f"Authorization header: {auth_header[:15]}...")
+        else:
+            logger.info("No Authorization header found")
+        
+        logger.info(f"Request data: {data}")
+        logger.info(f"Request params: {params}")
+
         # Ensure data is not None for any requests with application/json content type
         # Supabase API expects a valid JSON body (even if empty) when Content-Type is application/json
         if data is None and 'Content-Type' in request_headers and request_headers['Content-Type'] == 'application/json':
             data = {}
+            logger.info("Initialized empty JSON data")
 
         try:
             logger.debug(f"Making {method} request to {url}")
@@ -150,7 +166,17 @@ class SupabaseService:
             )
 
             # Log request details at debug level
-            logger.debug(f"Request to {url}: {method} - Status: {response.status_code}")
+            logger.info(f"Request to {url}: {method} - Status: {response.status_code}")
+            logger.info(f"Response headers: {response.headers}")
+            
+            # Log response content for debugging
+            try:
+                if response.content:
+                    logger.info(f"Response content: {response.content[:200]}...")
+                    if response.status_code >= 400:
+                        logger.error(f"Error response: {response.content}")
+            except Exception as e:
+                logger.error(f"Error logging response content: {str(e)}")
 
             # Handle different error scenarios
             if response.status_code == 401 or response.status_code == 403:

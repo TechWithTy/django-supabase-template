@@ -1,61 +1,116 @@
 from typing import Any, Dict, List, Optional, Union
 import base64
 from io import BytesIO
+import os
+import logging
 
 from django.conf import settings
-from rest_framework import status, permissions
-from rest_framework.decorators import api_view, permission_classes, parser_classes
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes, parser_classes, authentication_classes
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.request import Request
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated, AllowAny
 
-# Import the SupabaseStorageService directly
+from apps.authentication.authentication import SupabaseJWTAuthentication
 from apps.supabase_home.storage import SupabaseStorageService
+
 
 # Initialize the storage service
 storage_service = SupabaseStorageService()
 
 
+def _get_auth_token(request: Request) -> Optional[str]:
+    """
+    Extract the auth token from the request.
+    
+    Checks in the following order:
+    1. request.auth.token (set by DRF authentication)
+    2. Authorization header (for tests using APIClient)
+    3. request.data.get('auth_token') (for POST requests)
+    4. request.query_params.get('auth_token') (for GET requests)
+    
+    Returns:
+        Optional[str]: The auth token if found, None otherwise
+    """
+    # Check if token is in request.auth
+    if hasattr(request, "auth") and request.auth is not None and hasattr(request.auth, "token"):
+        return request.auth.token
+    
+    # Check if token is in Authorization header (for tests)
+    auth_header = request.headers.get('Authorization', '')
+    if auth_header.startswith('Bearer '):
+        return auth_header.split(' ')[1]
+    
+    # Check if token is in request data (for POST requests)
+    if request.method in ["POST", "PUT", "PATCH"] and request.data.get("auth_token"):
+        return request.data.get("auth_token")
+    
+    # Check if token is in query params (for GET/DELETE requests)
+    if request.method in ["GET", "DELETE"] and request.query_params.get("auth_token"):
+        return request.query_params.get("auth_token")
+    
+    return None
+
+
 # Bucket Management
 @api_view(["POST"])
-@permission_classes([permissions.IsAuthenticated])
+@authentication_classes([SupabaseJWTAuthentication])
+@permission_classes([IsAuthenticated])
 def create_bucket(request: Request) -> Response:
     """
     Create a new storage bucket.
-
+    
     Request body:
     - bucket_id: Bucket identifier (required)
-    - public: Whether the bucket is publicly accessible (default: false)
-    - file_size_limit: Optional file size limit in bytes
-    - allowed_mime_types: Optional list of allowed MIME types
+    - public: Whether the bucket should be public (default: false)
+    - file_size_limit: Maximum file size in bytes (optional)
+    - allowed_mime_types: List of allowed MIME types (optional)
+    - is_admin: Whether to use admin privileges (optional)
+    - auth_token: Optional auth token to use instead of the request's auth token
     """
+    # Get required parameters
     bucket_id = request.data.get("bucket_id")
-    public = request.data.get("public", False)
-    file_size_limit = request.data.get("file_size_limit")
-    allowed_mime_types = request.data.get("allowed_mime_types")
-
     if not bucket_id:
         return Response(
             {"error": "Bucket ID is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    try:
-        # Get auth token if available
-        auth_token = (
-            request.auth.token
-            if hasattr(request, "auth") and hasattr(request.auth, "token")
-            else None
-        )
+    # Get optional parameters
+    public = request.data.get("public", False)
+    file_size_limit = request.data.get("file_size_limit")
+    allowed_mime_types = request.data.get("allowed_mime_types")
 
-        response = storage_service.create_bucket(
+    # Build the request data
+    data = {
+        "id": bucket_id,
+        "public": public,
+    }
+
+    if file_size_limit:
+        data["file_size_limit"] = file_size_limit
+
+    if allowed_mime_types:
+        data["allowed_mime_types"] = allowed_mime_types
+
+    try:
+        # Get auth token
+        auth_token = _get_auth_token(request)
+
+        # Check if admin access is requested - convert string to boolean
+        is_admin = request.data.get("is_admin", "False")
+        is_admin = is_admin.lower() == "true" if isinstance(is_admin, str) else bool(is_admin)
+
+        bucket = storage_service.create_bucket(
             bucket_id=bucket_id,
             public=public,
             file_size_limit=file_size_limit,
             allowed_mime_types=allowed_mime_types,
             auth_token=auth_token,
+            is_admin=is_admin,
         )
-        return Response(response, status=status.HTTP_201_CREATED)
+        return Response({"name": bucket["name"]}, status=status.HTTP_201_CREATED)
     except Exception as e:
         return Response(
             {"error": f"Failed to create bucket: {str(e)}"},
@@ -64,13 +119,16 @@ def create_bucket(request: Request) -> Response:
 
 
 @api_view(["GET"])
-@permission_classes([permissions.IsAuthenticated])
+@authentication_classes([SupabaseJWTAuthentication])
+@permission_classes([IsAuthenticated])
 def get_bucket(request: Request) -> Response:
     """
     Retrieve a bucket by ID.
 
     Query parameters:
     - bucket_id: Bucket identifier (required)
+    - is_admin: Whether to use admin privileges (optional)
+    - auth_token: Optional auth token to use instead of the request's auth token
     """
     bucket_id = request.query_params.get("bucket_id")
 
@@ -81,15 +139,15 @@ def get_bucket(request: Request) -> Response:
         )
 
     try:
-        # Get auth token if available
-        auth_token = (
-            request.auth.token
-            if hasattr(request, "auth") and hasattr(request.auth, "token")
-            else None
-        )
+        # Get auth token
+        auth_token = _get_auth_token(request)
+
+        # Check if admin access is requested - convert string to boolean
+        is_admin = request.query_params.get("is_admin", "False")
+        is_admin = is_admin.lower() == "true" if isinstance(is_admin, str) else bool(is_admin)
 
         response = storage_service.get_bucket(
-            bucket_id=bucket_id, auth_token=auth_token
+            bucket_id=bucket_id, auth_token=auth_token, is_admin=is_admin
         )
         return Response(response, status=status.HTTP_200_OK)
     except Exception as e:
@@ -100,21 +158,26 @@ def get_bucket(request: Request) -> Response:
 
 
 @api_view(["GET"])
-@permission_classes([permissions.IsAuthenticated])
+@authentication_classes([SupabaseJWTAuthentication])
+@permission_classes([IsAuthenticated])
 def list_buckets(request: Request) -> Response:
     """
-    List all buckets.
+    List all storage buckets.
+    
+    Query parameters:
+    - is_admin: Whether to use admin privileges (optional)
+    - auth_token: Optional auth token to use instead of the request's auth token
     """
     try:
-        # Get auth token if available
-        auth_token = (
-            request.auth.token
-            if hasattr(request, "auth") and hasattr(request.auth, "token")
-            else None
-        )
-
-        response = storage_service.list_buckets(auth_token=auth_token)
-        return Response(response, status=status.HTTP_200_OK)
+        # Get auth token
+        auth_token = _get_auth_token(request)
+        
+        # Check if admin access is requested - convert string to boolean
+        is_admin = request.query_params.get("is_admin", "False")
+        is_admin = is_admin.lower() == "true" if isinstance(is_admin, str) else bool(is_admin)
+        
+        buckets = storage_service.list_buckets(auth_token=auth_token, is_admin=is_admin)
+        return Response({"buckets": buckets}, status=status.HTTP_200_OK)
     except Exception as e:
         return Response(
             {"error": f"Failed to list buckets: {str(e)}"},
@@ -123,7 +186,8 @@ def list_buckets(request: Request) -> Response:
 
 
 @api_view(["PUT"])
-@permission_classes([permissions.IsAuthenticated])
+@authentication_classes([SupabaseJWTAuthentication])
+@permission_classes([IsAuthenticated])
 def update_bucket(request: Request) -> Response:
     """
     Update a bucket.
@@ -133,6 +197,7 @@ def update_bucket(request: Request) -> Response:
     - public: Whether the bucket is publicly accessible
     - file_size_limit: Optional file size limit in bytes
     - allowed_mime_types: Optional list of allowed MIME types
+    - auth_token: Optional auth token to use instead of the request's auth token
     """
     bucket_id = request.data.get("bucket_id")
     public = request.data.get("public")
@@ -146,12 +211,8 @@ def update_bucket(request: Request) -> Response:
         )
 
     try:
-        # Get auth token if available
-        auth_token = (
-            request.auth.token
-            if hasattr(request, "auth") and hasattr(request.auth, "token")
-            else None
-        )
+        # Get auth token
+        auth_token = _get_auth_token(request)
 
         response = storage_service.update_bucket(
             bucket_id=bucket_id,
@@ -169,13 +230,15 @@ def update_bucket(request: Request) -> Response:
 
 
 @api_view(["DELETE"])
-@permission_classes([permissions.IsAuthenticated])
+@authentication_classes([SupabaseJWTAuthentication])
+@permission_classes([IsAuthenticated])
 def delete_bucket(request: Request) -> Response:
     """
     Delete a bucket.
 
     Query parameters:
     - bucket_id: Bucket identifier (required)
+    - auth_token: Optional auth token to use instead of the request's auth token
     """
     bucket_id = request.query_params.get("bucket_id")
 
@@ -186,12 +249,8 @@ def delete_bucket(request: Request) -> Response:
         )
 
     try:
-        # Get auth token if available
-        auth_token = (
-            request.auth.token
-            if hasattr(request, "auth") and hasattr(request.auth, "token")
-            else None
-        )
+        # Get auth token
+        auth_token = _get_auth_token(request)
 
         response = storage_service.delete_bucket(
             bucket_id=bucket_id, auth_token=auth_token
@@ -205,13 +264,15 @@ def delete_bucket(request: Request) -> Response:
 
 
 @api_view(["POST"])
-@permission_classes([permissions.IsAuthenticated])
+@authentication_classes([SupabaseJWTAuthentication])
+@permission_classes([IsAuthenticated])
 def empty_bucket(request: Request) -> Response:
     """
     Empty a bucket (delete all files).
 
     Request body:
     - bucket_id: Bucket identifier (required)
+    - auth_token: Optional auth token to use instead of the request's auth token
     """
     bucket_id = request.data.get("bucket_id")
 
@@ -222,12 +283,8 @@ def empty_bucket(request: Request) -> Response:
         )
 
     try:
-        # Get auth token if available
-        auth_token = (
-            request.auth.token
-            if hasattr(request, "auth") and hasattr(request.auth, "token")
-            else None
-        )
+        # Get auth token
+        auth_token = _get_auth_token(request)
 
         response = storage_service.empty_bucket(
             bucket_id=bucket_id, auth_token=auth_token
@@ -242,7 +299,8 @@ def empty_bucket(request: Request) -> Response:
 
 # File Management
 @api_view(["POST"])
-@permission_classes([permissions.IsAuthenticated])
+@authentication_classes([SupabaseJWTAuthentication])
+@permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser, JSONParser])
 def upload_file(request: Request) -> Response:
     """
@@ -253,6 +311,7 @@ def upload_file(request: Request) -> Response:
     - path: File path within the bucket (required)
     - file: File data (required)
     - content_type: MIME type of the file (optional)
+    - auth_token: Optional auth token to use instead of the request's auth token
 
     OR
 
@@ -261,6 +320,7 @@ def upload_file(request: Request) -> Response:
     - path: File path within the bucket (required)
     - file_data: Base64-encoded file data (required)
     - content_type: MIME type of the file (optional)
+    - auth_token: Optional auth token to use instead of the request's auth token
     """
     bucket_id = request.data.get("bucket_id")
     path = request.data.get("path")
@@ -283,12 +343,12 @@ def upload_file(request: Request) -> Response:
         )
 
     try:
-        # Get auth token if available
-        auth_token = (
-            request.auth.token
-            if hasattr(request, "auth") and hasattr(request.auth, "token")
-            else None
-        )
+        # Get auth token
+        auth_token = _get_auth_token(request)
+
+        # Check if admin access is requested - convert string to boolean
+        is_admin = request.data.get("is_admin", "False")
+        is_admin = is_admin.lower() == "true" if isinstance(is_admin, str) else bool(is_admin)
 
         if file:
             # Handle multipart form upload
@@ -311,6 +371,7 @@ def upload_file(request: Request) -> Response:
             file_data=file_content,
             content_type=content_type,
             auth_token=auth_token,
+            is_admin=is_admin,
         )
         return Response(response, status=status.HTTP_201_CREATED)
     except Exception as e:
@@ -321,51 +382,55 @@ def upload_file(request: Request) -> Response:
 
 
 @api_view(["GET"])
-@permission_classes([permissions.IsAuthenticated])
+@authentication_classes([SupabaseJWTAuthentication])
+@permission_classes([IsAuthenticated])
 def download_file(request: Request) -> Response:
     """
     Download a file from a bucket.
 
     Query parameters:
     - bucket_id: Bucket identifier (required)
-    - path: File path within the bucket (required)
+    - path: File path (required)
+    - is_admin: Whether to use admin privileges (optional)
+    - auth_token: Optional auth token to use instead of the request's auth token
     """
+    # Get required parameters
     bucket_id = request.query_params.get("bucket_id")
     path = request.query_params.get("path")
 
-    if not bucket_id or not path:
+    if not bucket_id:
         return Response(
-            {"error": "Bucket ID and path are required"},
+            {"error": "Bucket ID is required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not path:
+        return Response(
+            {"error": "Path is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
     try:
-        # Get auth token if available
-        auth_token = (
-            request.auth.token
-            if hasattr(request, "auth") and hasattr(request.auth, "token")
-            else None
+        # Get auth token
+        auth_token = _get_auth_token(request)
+
+        # Check if admin access is requested - convert string to boolean
+        is_admin = request.query_params.get("is_admin", "False")
+        is_admin = is_admin.lower() == "true" if isinstance(is_admin, str) else bool(is_admin)
+
+        # Get the file
+        file_data, content_type = storage_service.download_file(
+            bucket_id=bucket_id,
+            path=path,
+            auth_token=auth_token,
+            is_admin=is_admin,
         )
 
-        file_content = storage_service.download_file(
-            bucket_id=bucket_id, path=path, auth_token=auth_token
-        )
-
-        # Try to determine content type from file extension
-        import mimetypes
-
-        content_type, _ = mimetypes.guess_type(path)
-        if not content_type:
-            content_type = "application/octet-stream"
-
-        return Response(
-            file_content,
-            status=status.HTTP_200_OK,
-            headers={
-                "Content-Type": content_type,
-                "Content-Disposition": f"attachment; filename={path.split('/')[-1]}",
-            },
-        )
+        # Create a response with the raw file data
+        from django.http import HttpResponse
+        response = HttpResponse(file_data, content_type=content_type)
+        response["Content-Disposition"] = f'attachment; filename="{os.path.basename(path)}"'
+        return response
     except Exception as e:
         return Response(
             {"error": f"Failed to download file: {str(e)}"},
@@ -374,56 +439,85 @@ def download_file(request: Request) -> Response:
 
 
 @api_view(["POST"])
-@permission_classes([permissions.IsAuthenticated])
+@authentication_classes([SupabaseJWTAuthentication])
+@permission_classes([IsAuthenticated])
 def list_files(request: Request) -> Response:
     """
     List files in a bucket.
-
-    Request body:
-    - bucket_id: Bucket identifier (required)
+    
+    Required parameters:
+    - bucket_id: The ID of the bucket to list files from
+    
+    Optional parameters:
     - path: Path prefix to filter files (default: "")
     - limit: Maximum number of files to return (default: 100)
     - offset: Offset for pagination (default: 0)
     - sort_by: Optional sorting parameters
+    - is_admin: Whether to use service role key (admin access)
+    - auth_token: Optional JWT token for authenticated requests
+    
+    Returns:
+        Response with a list of files
     """
+    logger = logging.getLogger("storage_view")
+    
+    # Extract parameters
     bucket_id = request.data.get("bucket_id")
     path = request.data.get("path", "")
     limit = request.data.get("limit", 100)
     offset = request.data.get("offset", 0)
     sort_by = request.data.get("sort_by")
-
+    is_admin = request.data.get("is_admin", False)
+    
+    # Validate required parameters
     if not bucket_id:
         return Response(
-            {"error": "Bucket ID is required"},
-            status=status.HTTP_400_BAD_REQUEST,
+            {"error": "bucket_id is required"},
+            status=status.HTTP_400_BAD_REQUEST
         )
-
+    
+    # Get auth token with enhanced logging
+    auth_token = _get_auth_token(request)
+    logger.info(f"Auth token available: {bool(auth_token)}")
+    if auth_token:
+        logger.info(f"Auth token first 10 chars: {auth_token[:10]}...")
+    else:
+        logger.warning("No auth token found in request")
+        logger.debug(f"Request auth: {request.auth}")
+        logger.debug(f"Request user: {request.user}")
+        logger.debug(f"Request META: {request.META.get('HTTP_AUTHORIZATION', 'Not found')}")
+    
+    # Get storage service
+    storage_service = SupabaseStorageService()
+    
     try:
-        # Get auth token if available
-        auth_token = (
-            request.auth.token
-            if hasattr(request, "auth") and hasattr(request.auth, "token")
-            else None
-        )
-
-        response = storage_service.list_files(
+        # List files
+        logger.info(f"Listing files in bucket {bucket_id} with path {path}")
+        logger.info(f"Using admin access: {is_admin}")
+        
+        result = storage_service.list_files(
             bucket_id=bucket_id,
             path=path,
             limit=limit,
             offset=offset,
             sort_by=sort_by,
             auth_token=auth_token,
+            is_admin=is_admin
         )
-        return Response(response, status=status.HTTP_200_OK)
+        
+        return Response({"files": result}, status=status.HTTP_200_OK)
+    
     except Exception as e:
+        logger.error(f"Error listing files: {str(e)}")
         return Response(
             {"error": f"Failed to list files: {str(e)}"},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
 
 @api_view(["POST"])
-@permission_classes([permissions.IsAuthenticated])
+@authentication_classes([SupabaseJWTAuthentication])
+@permission_classes([IsAuthenticated])
 def move_file(request: Request) -> Response:
     """
     Move a file to a new location.
@@ -432,6 +526,7 @@ def move_file(request: Request) -> Response:
     - bucket_id: Bucket identifier (required)
     - source_path: Current file path (required)
     - destination_path: New file path (required)
+    - auth_token: Optional auth token to use instead of the request's auth token
     """
     bucket_id = request.data.get("bucket_id")
     source_path = request.data.get("source_path")
@@ -444,12 +539,8 @@ def move_file(request: Request) -> Response:
         )
 
     try:
-        # Get auth token if available
-        auth_token = (
-            request.auth.token
-            if hasattr(request, "auth") and hasattr(request.auth, "token")
-            else None
-        )
+        # Get auth token
+        auth_token = _get_auth_token(request)
 
         response = storage_service.move_file(
             bucket_id=bucket_id,
@@ -466,7 +557,8 @@ def move_file(request: Request) -> Response:
 
 
 @api_view(["POST"])
-@permission_classes([permissions.IsAuthenticated])
+@authentication_classes([SupabaseJWTAuthentication])
+@permission_classes([IsAuthenticated])
 def copy_file(request: Request) -> Response:
     """
     Copy a file to a new location.
@@ -475,6 +567,7 @@ def copy_file(request: Request) -> Response:
     - bucket_id: Bucket identifier (required)
     - source_path: Source file path (required)
     - destination_path: Destination file path (required)
+    - auth_token: Optional auth token to use instead of the request's auth token
     """
     bucket_id = request.data.get("bucket_id")
     source_path = request.data.get("source_path")
@@ -487,12 +580,8 @@ def copy_file(request: Request) -> Response:
         )
 
     try:
-        # Get auth token if available
-        auth_token = (
-            request.auth.token
-            if hasattr(request, "auth") and hasattr(request.auth, "token")
-            else None
-        )
+        # Get auth token
+        auth_token = _get_auth_token(request)
 
         response = storage_service.copy_file(
             bucket_id=bucket_id,
@@ -508,65 +597,72 @@ def copy_file(request: Request) -> Response:
         )
 
 
-@api_view(["DELETE"])
-@permission_classes([permissions.IsAuthenticated])
+@api_view(["POST"])
+@authentication_classes([SupabaseJWTAuthentication])
+@permission_classes([IsAuthenticated])
 def delete_file(request: Request) -> Response:
     """
     Delete files from a bucket.
 
-    Query parameters (for single file):
-    - bucket_id: Bucket identifier (required)
-    - path: File path (required if paths not provided in body)
+    Args:
+        request: Request object containing:
+            bucket_id: Bucket identifier
+            path: File path or list of file paths to delete
+            is_admin: Whether to use admin privileges
 
-    OR
-
-    Request body (for multiple files):
-    - bucket_id: Bucket identifier (required)
-    - paths: List of file paths to delete (required if path not provided in query)
+    Returns:
+        Success message
     """
-    # Check if bucket_id and path are provided in query params (single file delete)
-    bucket_id = request.query_params.get("bucket_id") or request.data.get("bucket_id")
-    path = request.query_params.get("path")
-    paths = request.data.get("paths")
-
-    if not bucket_id:
-        return Response(
-            {"error": "Bucket ID is required"},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    if not path and not paths:
-        return Response(
-            {"error": "Either path or paths must be provided"},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    # If path is provided in query params, use it
-    if path:
-        paths = path
-
+    import logging
+    logger = logging.getLogger(__name__)
+    
     try:
-        # Get auth token if available
-        auth_token = (
-            request.auth.token
-            if hasattr(request, "auth") and hasattr(request.auth, "token")
-            else None
-        )
-
+        # Get parameters from request
+        bucket_id = request.data.get('bucket_id')
+        file_path = request.data.get('path')
+        is_admin = request.data.get('is_admin', False)
+        
+        # Validate required parameters
+        if not bucket_id:
+            return Response({"error": "bucket_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        if not file_path:
+            return Response({"error": "path is required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get auth token from request
+        auth_token = _get_auth_token(request)
+        
+        # Process file paths to ensure they're in the correct format
+        file_paths = file_path if isinstance(file_path, list) else [file_path]
+        
+        # Get storage service
+        storage_service = SupabaseStorageService()
+        
+        # Log the parameters being sent to the storage service
+        logger.info(f"Deleting files from bucket {bucket_id}: {file_paths}")
+        logger.info(f"Using auth_token: {bool(auth_token)}, is_admin: {is_admin}")
+        
+        # Make direct call to storage service with explicit parameters
         response = storage_service.delete_file(
-            bucket_id=bucket_id, paths=paths, auth_token=auth_token
+            bucket_id=bucket_id, 
+            paths=file_paths,  # Use our processed file_paths list
+            auth_token=auth_token,
+            is_admin=is_admin
         )
-        return Response(response, status=status.HTTP_200_OK)
+        
+        # Verify the deletion was successful
+        logger.info(f"Delete operation response: {response}")
+        
+        return Response({"message": "Files deleted successfully"}, status=status.HTTP_200_OK)
     except Exception as e:
-        return Response(
-            {"error": f"Failed to delete file(s): {str(e)}"},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
+        logger.error(f"Error deleting files: {str(e)}")
+        logger.exception("Detailed exception information:")
+        return Response({"error": f"Failed to delete file(s): {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # URL Management
 @api_view(["POST"])
-@permission_classes([permissions.IsAuthenticated])
+@authentication_classes([SupabaseJWTAuthentication])
+@permission_classes([IsAuthenticated])
 def create_signed_url(request: Request) -> Response:
     """
     Create a signed URL for a file.
@@ -575,6 +671,7 @@ def create_signed_url(request: Request) -> Response:
     - bucket_id: Bucket identifier (required)
     - path: File path (required)
     - expires_in: Expiration time in seconds (default: 60)
+    - auth_token: Optional auth token to use instead of the request's auth token
     """
     bucket_id = request.data.get("bucket_id")
     path = request.data.get("path")
@@ -587,12 +684,8 @@ def create_signed_url(request: Request) -> Response:
         )
 
     try:
-        # Get auth token if available
-        auth_token = (
-            request.auth.token
-            if hasattr(request, "auth") and hasattr(request.auth, "token")
-            else None
-        )
+        # Get auth token
+        auth_token = _get_auth_token(request)
 
         response = storage_service.create_signed_url(
             bucket_id=bucket_id, path=path, expires_in=expires_in, auth_token=auth_token
@@ -606,7 +699,8 @@ def create_signed_url(request: Request) -> Response:
 
 
 @api_view(["POST"])
-@permission_classes([permissions.IsAuthenticated])
+@authentication_classes([SupabaseJWTAuthentication])
+@permission_classes([IsAuthenticated])
 def create_signed_urls(request: Request) -> Response:
     """
     Create signed URLs for multiple files.
@@ -615,6 +709,7 @@ def create_signed_urls(request: Request) -> Response:
     - bucket_id: Bucket identifier (required)
     - paths: List of file paths (required)
     - expires_in: Expiration time in seconds (default: 60)
+    - auth_token: Optional auth token to use instead of the request's auth token
     """
     bucket_id = request.data.get("bucket_id")
     paths = request.data.get("paths")
@@ -627,12 +722,8 @@ def create_signed_urls(request: Request) -> Response:
         )
 
     try:
-        # Get auth token if available
-        auth_token = (
-            request.auth.token
-            if hasattr(request, "auth") and hasattr(request.auth, "token")
-            else None
-        )
+        # Get auth token
+        auth_token = _get_auth_token(request)
 
         response = storage_service.create_signed_urls(
             bucket_id=bucket_id,
@@ -649,7 +740,8 @@ def create_signed_urls(request: Request) -> Response:
 
 
 @api_view(["POST"])
-@permission_classes([permissions.IsAuthenticated])
+@authentication_classes([SupabaseJWTAuthentication])
+@permission_classes([IsAuthenticated])
 def create_signed_upload_url(request: Request) -> Response:
     """
     Create a signed URL for uploading a file.
@@ -657,6 +749,7 @@ def create_signed_upload_url(request: Request) -> Response:
     Request body:
     - bucket_id: Bucket identifier (required)
     - path: File path (required)
+    - auth_token: Optional auth token to use instead of the request's auth token
     """
     bucket_id = request.data.get("bucket_id")
     path = request.data.get("path")
@@ -668,12 +761,8 @@ def create_signed_upload_url(request: Request) -> Response:
         )
 
     try:
-        # Get auth token if available
-        auth_token = (
-            request.auth.token
-            if hasattr(request, "auth") and hasattr(request.auth, "token")
-            else None
-        )
+        # Get auth token
+        auth_token = _get_auth_token(request)
 
         response = storage_service.create_signed_upload_url(
             bucket_id=bucket_id, path=path, auth_token=auth_token
@@ -687,7 +776,8 @@ def create_signed_upload_url(request: Request) -> Response:
 
 
 @api_view(["PUT"])
-@permission_classes([permissions.IsAuthenticated])
+@authentication_classes([SupabaseJWTAuthentication])
+@permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser, JSONParser])
 def upload_to_signed_url(request: Request) -> Response:
     """
@@ -697,6 +787,7 @@ def upload_to_signed_url(request: Request) -> Response:
     - signed_url: Signed URL for upload (required)
     - file: File data (required)
     - content_type: MIME type of the file (optional)
+    - auth_token: Optional auth token to use instead of the request's auth token
 
     OR
 
@@ -704,6 +795,7 @@ def upload_to_signed_url(request: Request) -> Response:
     - signed_url: Signed URL for upload (required)
     - file_data: Base64-encoded file data (required)
     - content_type: MIME type of the file (optional)
+    - auth_token: Optional auth token to use instead of the request's auth token
     """
     signed_url = request.data.get("signed_url")
     content_type = request.data.get("content_type")
@@ -725,6 +817,9 @@ def upload_to_signed_url(request: Request) -> Response:
         )
 
     try:
+        # Get auth token
+        auth_token = _get_auth_token(request)
+
         if file:
             # Handle multipart form upload
             file_content = file.read()
@@ -741,7 +836,10 @@ def upload_to_signed_url(request: Request) -> Response:
                 )
 
         storage_service.upload_to_signed_url(
-            signed_url=signed_url, file_data=file_content, content_type=content_type
+            signed_url=signed_url, 
+            file_data=file_content, 
+            content_type=content_type,
+            auth_token=auth_token  # Pass the auth token to the service
         )
         return Response(
             {"message": "File uploaded successfully"}, status=status.HTTP_200_OK
@@ -754,29 +852,32 @@ def upload_to_signed_url(request: Request) -> Response:
 
 
 @api_view(["GET"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([AllowAny])
 def get_public_url(request: Request) -> Response:
     """
-    Get the public URL for a file in a public bucket.
-
+    Get a public URL for a file in a public bucket.
+    
     Query parameters:
     - bucket_id: Bucket identifier (required)
     - path: File path (required)
+    
+    Returns:
+        Response with the public URL
     """
     bucket_id = request.query_params.get("bucket_id")
     path = request.query_params.get("path")
-
+    
     if not bucket_id or not path:
         return Response(
-            {"error": "Bucket ID and path are required"},
-            status=status.HTTP_400_BAD_REQUEST,
+            {"error": "bucket_id and path are required"},
+            status=status.HTTP_400_BAD_REQUEST
         )
-
+    
     try:
-        public_url = storage_service.get_public_url(bucket_id=bucket_id, path=path)
-        return Response({"url": public_url}, status=status.HTTP_200_OK)
+        url = storage_service.get_public_url(bucket_id=bucket_id, path=path)
+        return Response({"public_url": url}, status=status.HTTP_200_OK)
     except Exception as e:
         return Response(
             {"error": f"Failed to get public URL: {str(e)}"},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )

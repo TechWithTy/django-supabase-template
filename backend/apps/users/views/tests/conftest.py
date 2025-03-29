@@ -6,8 +6,7 @@ import uuid
 import time
 from pathlib import Path
 from rest_framework.test import APIClient
-from django.contrib.auth.models import User
-from rest_framework.authtoken.models import Token
+from rest_framework.authentication import BaseAuthentication
 from apps.users.models import UserProfile
 from apps.supabase_home.auth import SupabaseAuthService
 from apps.supabase_home.storage import SupabaseStorageService
@@ -29,6 +28,30 @@ TEST_EMAIL = os.environ.get('TEST_USER_EMAIL', 'integration-test@example.com')
 TEST_PASSWORD = os.environ.get('TEST_USER_PASSWORD', 'integration-test-password')
 TEST_BUCKET = os.environ.get('TEST_BUCKET', 'integration-test-bucket')
 TEST_TABLE = os.environ.get('TEST_TABLE', 'integration_test_table')
+
+# Create a custom token object for testing
+class SupabaseAuthToken:
+    """A simple class to hold the auth token for testing"""
+    def __init__(self, token):
+        self.token = token
+
+class CustomAuthentication(BaseAuthentication):
+    def authenticate(self, request):
+        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        if auth_header.startswith('Bearer '):
+            token = auth_header.split(' ')[1]
+            # Create a mock user with an ID
+            from django.contrib.auth.models import User
+            user = User(username='test_user')
+            # Set the token directly on the user object
+            user.auth_token = token
+            # Also set it as a property that matches what our views expect
+            token_obj = SupabaseAuthToken(token)
+            return (user, token_obj)
+        return None
+
+    def authenticate_header(self, request):
+        return 'Bearer'
 
 @pytest.fixture(scope="session")
 def test_user_credentials():
@@ -90,29 +113,16 @@ def test_user_credentials():
 
 @pytest.fixture(scope="session")
 def authenticated_client(test_user_credentials):
-    """API client authenticated with a real Supabase token"""
+    """API client authenticated with a real Supabase JWT token"""
     client = APIClient()
     
-    # For testing utility views, we'll use Django session auth instead of JWT
-    # This will work with our test_settings.py configuration
-    try:
-        # Create a test user if it doesn't exist
-        user, created = User.objects.get_or_create(
-            username='test_user',
-            defaults={'email': 'test@example.com', 'is_active': True}
-        )
-        user.set_password('password')
-        user.save()
+    # Check if we have valid credentials
+    if not test_user_credentials or not test_user_credentials.get("auth_token"):
+        pytest.skip("No authentication token available")
+        return None
         
-        # Use force_authenticate to bypass authentication checks
-        client.force_authenticate(user=user)
-    except Exception as e:
-        print(f"Could not set up test authentication: {str(e)}")
-        # If force_authenticate fails, we'll still try the Supabase token
-        if test_user_credentials and test_user_credentials.get("auth_token"):
-            client.credentials(HTTP_AUTHORIZATION=f'Bearer {test_user_credentials["auth_token"]}')
-        else:
-            pytest.skip("No authentication token available")
+    # Set the JWT token in the Authorization header
+    client.credentials(HTTP_AUTHORIZATION=f'Bearer {test_user_credentials["auth_token"]}')
     
     return client
 
