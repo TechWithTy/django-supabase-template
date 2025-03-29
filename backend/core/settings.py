@@ -271,6 +271,32 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 
+from celery.schedules import crontab
+
+CELERY_BEAT_SCHEDULE = {
+    'cleanup-expired-credit-holds': {
+        'task': 'apps.credits.tasks.cleanup_expired_credit_holds',
+        'schedule': crontab(minute='0', hour='*/3'),  # Run every 3 hours
+    },
+    'periodic-credit-allocation': {
+        'task': 'apps.credits.tasks.periodic_credit_allocation',
+        'schedule': crontab(minute='0', hour='0', day_of_month='1'),  # Run on 1st of every month
+    },
+    'process-pending-credit-transactions': {
+        'task': 'apps.credits.tasks.process_pending_transactions',
+        'schedule': crontab(minute='*/15'),  # Run every 15 minutes
+    },
+    'sync-credit-usage-with-supabase': {
+        'task': 'apps.credits.tasks.sync_credit_usage_with_supabase',
+        'schedule': crontab(minute='*/10'),  # Run every 10 minutes
+    },
+}
+
+CELERY_TASK_TIME_LIMIT = 60 * 5  # 5 minutes
+CELERY_TASK_SOFT_TIME_LIMIT = 60 * 3  # 3 minutes
+CELERY_TASK_ACKS_LATE = True  # Only acknowledge task after it's been executed
+CELERY_TASK_REJECT_ON_WORKER_LOST = True  # Reject task if worker disconnects
+
 # Redis settings
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 

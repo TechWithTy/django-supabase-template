@@ -1,0 +1,32 @@
+Your Weekly Credit Usage Report
+{{ start_date|date:'F d' }} - {{ end_date|date:'F d, Y' }}
+
+Hello {{ user.first_name|default:user.username }},
+
+Here's your weekly summary of credit usage in the Django Supabase platform:
+
+Current Balance: {{ current_balance }} Credits
+
+Summary:
+- Credits Spent: {{ credits_spent }}
+- Credits Earned: {{ credits_earned }}
+- Net Change: {{ credits_earned|add:'-'|add:credits_spent }}
+
+Detailed Usage:
+{% if usage_by_type %}
+{% for usage in usage_by_type %}
+* {{ usage.transaction_type|title }}: {{ usage.total_spent|abs }} credits ({{ usage.count }} transactions)
+{% endfor %}
+{% else %}
+No credits were used this week.
+{% endif %}
+
+Your subscription will be renewed with more credits on the first day of next month.
+
+To view your dashboard, visit: {{ dashboard_url }}
+
+Thank you for using our platform!
+
+--
+This is an automated email. Please do not reply to this message.
+© {% now "Y" %} Django Supabase Template. All rights reserved.

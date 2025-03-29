@@ -12,7 +12,7 @@ class CreditTransaction(models.Model):
     Model to track credit transactions for users.
     
     This model records all credit transactions (additions and deductions)
-    for audit and tracking purposes.
+    for audit and tracking purposes. Updated for Supabase sync.
     """
     TRANSACTION_TYPE_CHOICES = [
         ('deduction', _('Deduction')),
@@ -62,6 +62,28 @@ class CreditTransaction(models.Model):
         null=True,
         blank=True,
         help_text=_('Reference to related transaction (e.g., hold ID)')
+    )
+    status = models.CharField(
+        _('Status'),
+        max_length=20,
+        default='COMPLETED',
+        choices=[
+            ('COMPLETED', _('Completed')),
+            ('PENDING', _('Pending')),
+            ('FAILED', _('Failed')),
+        ],
+        help_text=_('Current status of the transaction')
+    )
+    notes = models.TextField(
+        _('Notes'),
+        blank=True,
+        null=True,
+        help_text=_('Additional notes about the transaction')
+    )
+    synced_to_supabase = models.BooleanField(
+        _('Synced to Supabase'),
+        default=False,
+        help_text=_('Whether this transaction has been synced to Supabase')
     )
     created_at = models.DateTimeField(auto_now_add=True)
     
