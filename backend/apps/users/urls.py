@@ -6,8 +6,8 @@ from . import base
 from .views import auth_view, client_view, database_view, edge_functions_view, realtime_view, storage_view, utility_views
 from .views.creditable_views import utility_view
 
-# Import health check from base if it exists there, otherwise we'll need to find it
-from ..authentication.views import health_check
+# Import health check views from our local module
+from .views.health_check import health_check, health_check_supabase
 
 # Set the app namespace
 app_name = 'users'
@@ -21,8 +21,9 @@ urlpatterns = [
     # Script execution endpoint
     path('script/run/', execute_main_script, name='run_main_script'),
     
-    # Health check endpoint
-    path('health/', health_check, name='health_check'),
+    # Health check endpoints
+    path('health/', health_check, name='health-check'),
+    path('health/supabase/', health_check_supabase, name='health-check-supabase'),
     
     # Utility endpoints for tests
     path('utility/health-check/', utility_views.health_check, name='utility-health-check'),

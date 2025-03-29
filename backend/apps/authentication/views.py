@@ -6,6 +6,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 import logging
+from datetime import datetime
 from .models import UserData
 
 # Import the SupabaseAuthService directly
@@ -24,7 +25,7 @@ def health_check(request: Request) -> Response:
     """
     Health check endpoint to verify the API is running.
     """
-    return Response({"status": "ok"}, status=status.HTTP_200_OK)
+    return Response({"status": "ok", "timestamp": datetime.now().isoformat()}, status=status.HTTP_200_OK)
 
 
 # User Registration Endpoint
