@@ -4,7 +4,6 @@ from rest_framework.routers import DefaultRouter
 
 from . import base
 from .views import auth_view, client_view, database_view, edge_functions_view, realtime_view, storage_view, utility_views
-from .views.creditable_views import utility_view
 
 # Import health check views from our local module
 from .views.health_check import health_check, health_check_supabase
@@ -36,6 +35,11 @@ urlpatterns = [
     path('utility/storage-config/', utility_views.get_storage_config, name='utility-get-storage-config'),
     
     # Auth endpoints
+    path('auth/signup/', auth_view.signup, name='auth-signup'),
+    path('auth/login/', auth_view.sign_in_with_email, name='auth-login'),
+    path('auth/logout/', auth_view.sign_out, name='auth-logout'),
+    path('auth/user/', auth_view.get_current_user, name='auth-user'),
+    path('auth/reset-password/', auth_view.reset_password, name='auth-reset-password'),
     path('auth/anonymous/', auth_view.create_anonymous_user, name='create_anonymous_user'),
     path('auth/signin/email/', auth_view.sign_in_with_email, name='sign_in_with_email'),
     path('auth/signin/token/', auth_view.sign_in_with_id_token, name='sign_in_with_id_token'),
@@ -44,7 +48,6 @@ urlpatterns = [
     path('auth/signin/oauth/', auth_view.sign_in_with_oauth, name='sign_in_with_oauth'),
     path('auth/signin/sso/', auth_view.sign_in_with_sso, name='sign_in_with_sso'),
     path('auth/signout/', auth_view.sign_out, name='sign_out'),
-    path('auth/reset-password/', auth_view.reset_password, name='reset_password'),
     path('auth/session/', auth_view.get_session, name='get_session'),
     path('auth/session/refresh/', auth_view.refresh_session, name='refresh_session'),
     path('auth/user/<str:user_id>/', auth_view.get_user, name='get_user'),

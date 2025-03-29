@@ -315,6 +315,23 @@ class SupabaseAuthService(SupabaseService):
             data={"data": data},
         )
 
+    def get_user_by_token(self, token: str) -> Dict[str, Any]:
+        """
+        Get user information from a JWT token.
+
+        Args:
+            token: JWT token
+
+        Returns:
+            User data
+        """
+        # Call the user endpoint with the token
+        return self._make_request(
+            method="GET",
+            endpoint="/auth/v1/user",
+            auth_token=token,
+        )
+
     # MFA methods
     def enroll_mfa_factor(
         self, auth_token: str, factor_type: str = "totp"

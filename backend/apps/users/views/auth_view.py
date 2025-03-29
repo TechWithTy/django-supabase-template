@@ -18,6 +18,73 @@ auth_service = SupabaseAuthService()
 
 
 @api_view(["POST"])
+def signup(request: Request) -> Response:
+    """
+    Create a new user with email and password.
+    """
+    email = request.data.get("email")
+    password = request.data.get("password")
+    first_name = request.data.get("first_name", "")
+    last_name = request.data.get("last_name", "")
+    
+    if not email or not password:
+        return Response(
+            {"error": "Email and password are required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    
+    try:
+        # Create user metadata with first and last name if provided
+        user_metadata = {}
+        if first_name:
+            user_metadata["first_name"] = first_name
+        if last_name:
+            user_metadata["last_name"] = last_name
+            
+        # Create the user in Supabase
+        user = auth_service.create_user(
+            email=email,
+            password=password,
+            user_metadata=user_metadata
+        )
+        
+        # Try to sign in the user to get a session, but don't fail if email confirmation is required
+        session = None
+        try:
+            session = auth_service.sign_in_with_email(
+                email=email,
+                password=password
+            )
+        except Exception as signin_error:
+            # Check if the error is due to email not being confirmed
+            error_message = str(signin_error)
+            if "email_not_confirmed" in error_message:
+                # Log a warning but continue with the signup process
+                print(f"Warning: Email not confirmed for {email}. User created but not signed in.")
+            else:
+                # For other sign-in errors, we still want to log them but not fail the signup
+                print(f"Warning: Failed to sign in after signup: {error_message}")
+        
+        # Always include both user and session in the response
+        # If session is None, it will be serialized as null in the JSON response
+        response_data = {
+            "user": user,
+            "session": session
+        }
+        
+        # Add a message if email confirmation is required
+        if session is None:
+            response_data["message"] = "User created successfully. Please confirm your email before signing in."
+        
+        return Response(response_data, status=status.HTTP_201_CREATED)
+    except Exception as e:
+        return Response(
+            {"error": f"Failed to create user: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@api_view(["POST"])
 def create_anonymous_user(request: Request) -> Response:
     """
     Create an anonymous user in Supabase.
@@ -48,7 +115,22 @@ def sign_in_with_email(request: Request) -> Response:
 
     try:
         response = auth_service.sign_in_with_email(email=email, password=password)
-        return Response(response, status=status.HTTP_200_OK)
+        
+        # Extract user data from the response
+        user = {
+            'id': response.get('user', {}).get('id') if 'user' in response else None,
+            'email': email,
+            # Add other user fields as needed
+        }
+        
+        # Format the response to match the expected structure
+        return Response(
+            {
+                "user": user,
+                "session": response,  # Use the entire response as the session data
+            },
+            status=status.HTTP_200_OK
+        )
     except Exception as e:
         return Response(
             {"error": f"Failed to sign in: {str(e)}"},
@@ -186,21 +268,37 @@ def sign_out(request: Request) -> Response:
     """
     Sign out a user.
     """
+    # Try to get auth token from request data first
     auth_token = request.data.get("auth_token")
-
+    
+    # If not in request data, try to get from Authorization header
+    if not auth_token:
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            auth_token = auth_header.split(' ')[1]
+    
     if not auth_token:
         return Response(
             {"error": "Auth token is required"}, status=status.HTTP_400_BAD_REQUEST
         )
-
+    
     try:
-        response = auth_service.sign_out(auth_token=auth_token)
-        return Response(response, status=status.HTTP_200_OK)
+        auth_service.sign_out(auth_token=auth_token)
+        # Return 204 No Content on successful logout as per REST conventions
+        return Response(status=status.HTTP_204_NO_CONTENT)
     except Exception as e:
-        return Response(
-            {"error": f"Failed to sign out: {str(e)}"},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
+        error_message = str(e)
+        # Check if the error is related to authentication
+        if "401" in error_message or "403" in error_message or "session_not_found" in error_message:
+            # If the session is already invalid, we can consider this a successful logout
+            # This handles the case where the token is expired or already invalidated
+            print(f"Warning: Session already invalid during logout: {error_message}")
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        else:
+            return Response(
+                {"error": f"Failed to sign out: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 @api_view(["POST"])
@@ -218,12 +316,25 @@ def reset_password(request: Request) -> Response:
 
     try:
         response = auth_service.reset_password(email=email, redirect_url=redirect_url)
-        return Response(response, status=status.HTTP_200_OK)
+        return Response({"message": "Password reset email sent"}, status=status.HTTP_200_OK)
     except Exception as e:
-        return Response(
-            {"error": f"Failed to send password reset email: {str(e)}"},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
+        error_message = str(e)
+        # Check if the error is due to rate limiting
+        if "over_email_send_rate_limit" in error_message or "429" in error_message:
+            # For security reasons, don't reveal that we hit a rate limit
+            # This prevents user enumeration attacks
+            print(f"Warning: Rate limit exceeded for password reset: {error_message}")
+            return Response(
+                {"message": "If your email exists in our system, you will receive a password reset link"},
+                status=status.HTTP_200_OK
+            )
+        else:
+            # Log the error but still return a generic success message for security
+            print(f"Error in password reset: {error_message}")
+            return Response(
+                {"message": "If your email exists in our system, you will receive a password reset link"},
+                status=status.HTTP_200_OK
+            )
 
 
 @api_view(["GET"])
@@ -525,3 +636,41 @@ def list_users(request: Request) -> Response:
             {"error": f"Failed to list users: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def get_current_user(request: Request) -> Response:
+    """
+    Retrieve the current authenticated user's information.
+    """
+    try:
+        # Get the JWT token from the request
+        auth_header = request.headers.get('Authorization', '')
+        if not auth_header.startswith('Bearer '):
+            return Response(
+                {"error": "Invalid authorization header"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+        
+        token = auth_header.split(' ')[1]
+        
+        # Get user information from the token
+        user_info = auth_service.get_user_by_token(token)
+        
+        return Response(user_info, status=status.HTTP_200_OK)
+    except Exception as e:
+        error_message = str(e)
+        # Check if the error is related to authentication
+        if "401" in error_message or "403" in error_message or "session_not_found" in error_message or "authentication" in error_message.lower():
+            # Return 401 Unauthorized for authentication-related errors
+            return Response(
+                {"error": "Authentication failed"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+        else:
+            # For other errors, return 500 Internal Server Error
+            return Response(
+                {"error": f"Failed to get user information: {error_message}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
