@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.contrib.auth.models import User
 from rest_framework import viewsets, status, permissions
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -13,6 +13,9 @@ from apps.supabase_home.auth import (
 
 from ..models import UserProfile
 from ..serializers import UserSerializer, UserProfileSerializer
+
+# Import custom throttling classes
+from apps.authentication.throttling import IPRateThrottle, IPBasedUserRateThrottle
 
 auth_service = SupabaseAuthService()
 
@@ -640,6 +643,7 @@ def list_users(request: Request) -> Response:
 
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
+@throttle_classes([IPRateThrottle, IPBasedUserRateThrottle])
 def get_current_user(request: Request) -> Response:
     """
     Retrieve the current authenticated user's information.

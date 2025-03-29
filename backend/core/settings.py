@@ -21,6 +21,9 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-key-for-dev-only")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
 
+# Testing mode flag - used by middleware and test runners
+TESTING = os.getenv("TESTING", "False").lower() == "true"
+
 ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
 # Application definition
@@ -221,11 +224,15 @@ REST_FRAMEWORK = {
         "rest_framework.throttling.AnonRateThrottle",
         "rest_framework.throttling.UserRateThrottle",
         "apps.credits.throttling.CreditBasedThrottle",
+        "apps.authentication.throttling.IPRateThrottle",
+        "apps.authentication.throttling.IPBasedUserRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
         "anon": os.getenv("DEFAULT_THROTTLE_RATES_ANON", "100/day"),
         "user": os.getenv("DEFAULT_THROTTLE_RATES_USER", "1000/day"),
         "premium": os.getenv("DEFAULT_THROTTLE_RATES_PREMIUM", "5000/day"),
+        "ip": os.getenv("DEFAULT_THROTTLE_RATES_IP", "1000/hour"),
+        "user_ip": os.getenv("DEFAULT_THROTTLE_RATES_USER_IP", "500/hour"),
     },
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
@@ -272,7 +279,7 @@ CACHES = {
         "LOCATION": os.getenv("REDIS_URL", "redis://redis:6379/1"),
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            "PARSER_CLASS": "redis.connection.HiredisParser",
+            # Removed PARSER_CLASS that was causing errors
             "CONNECTION_POOL_CLASS": "redis.BlockingConnectionPool",
             "CONNECTION_POOL_CLASS_KWARGS": {
                 "max_connections": 50,

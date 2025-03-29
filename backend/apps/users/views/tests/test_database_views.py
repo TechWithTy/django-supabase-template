@@ -1,10 +1,13 @@
+import time
 import pytest
+import uuid
 from django.urls import reverse
 from rest_framework import status
-import uuid
-import time
-from django.db import connection, reset_queries
+from rest_framework.test import APIClient
 from django.conf import settings
+from django.db import connection, reset_queries
+from django.test import TestCase
+from django.core.cache import cache
 
 # Import models we'll need for testing query optimization
 from django.contrib.auth import get_user_model
@@ -12,7 +15,6 @@ from apps.users.models import UserProfile
 
 # Import our query optimization utilities
 from utils.db_optimizations import QueryOptimizer, OptimizedQuerySetMixin
-
 
 @pytest.fixture
 def enable_query_counting(settings):
@@ -448,3 +450,82 @@ class TestResponseCompression:
         
         # Test passes if we reach here
         print("✓ Large response compression is working correctly")
+
+
+@pytest.mark.django_db
+class TestThrottling(TestCase):
+    """Test suite for API throttling features"""
+
+    def setUp(self):
+        # Create a test user for authentication
+        self.user = get_user_model().objects.create_user(
+            username=f'throttleuser_{time.time()}',  # Use unique username to avoid conflicts
+            email=f'throttleuser_{time.time()}@example.com',
+            password='testpassword'
+        )
+        # Create an authenticated client
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+        
+        # Clear the throttle cache before each test
+        cache.clear()
+    
+    def tearDown(self):
+        # Clean up after each test
+        cache.clear()
+
+    @pytest.mark.django_db
+    def test_throttling_functionality(self):
+        """Test that throttling works correctly by directly testing the throttle class"""
+        from rest_framework.throttling import UserRateThrottle
+        from rest_framework.test import APIRequestFactory
+        from django.contrib.auth.models import AnonymousUser
+        from rest_framework.views import APIView
+        from rest_framework.response import Response
+        from rest_framework.request import Request
+        
+        # Create a test throttle class with very restrictive rate
+        class TestUserThrottle(UserRateThrottle):
+            rate = '2/minute'  # Very restrictive for testing
+            scope = 'test'
+        
+        # Create a request factory and mock view
+        factory = APIRequestFactory()
+        
+        # Create a simple view that we'll use for testing
+        class ThrottledView(APIView):
+            throttle_classes = [TestUserThrottle]
+            
+            def get(self, request):
+                return Response({"message": "success"})
+        
+        view = ThrottledView.as_view()
+        
+        # Helper function to make a request with our authenticated user
+        def make_request():
+            request = factory.get('/test-throttling/')
+            request.user = self.user  # Use the authenticated user
+            return view(request)
+        
+        # Make 2 requests - should succeed (our limit is 2/minute)
+        response1 = make_request()
+        self.assertEqual(response1.status_code, status.HTTP_200_OK)
+        
+        response2 = make_request()
+        self.assertEqual(response2.status_code, status.HTTP_200_OK)
+        
+        # Make a 3rd request - should be throttled
+        response3 = make_request()
+        self.assertEqual(response3.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+        
+        # Verify throttle response contains expected information
+        self.assertIn('Retry-After', response3, "Response should include Retry-After header")
+        self.assertIn('detail', response3.data, "Response should include detail message")
+        self.assertIn('Request was throttled', response3.data['detail'], "Response should indicate throttling")
+        
+        # Clear cache to simulate waiting for the throttle period to expire
+        cache.clear()
+        
+        # After clearing the cache, we should be able to make requests again
+        response_after_clear = make_request()
+        self.assertEqual(response_after_clear.status_code, status.HTTP_200_OK)
