@@ -1,4 +1,5 @@
 from .views.creditable_views.main_view import execute_main_script
+from .views.creditable_views.utility_view import credit_based_function_demo
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
@@ -33,6 +34,7 @@ urlpatterns = [
     path('utility/system-info/', utility_views.get_system_info, name='utility-get-system-info'),
     path('utility/auth-config/', utility_views.get_auth_config, name='utility-get-auth-config'),
     path('utility/storage-config/', utility_views.get_storage_config, name='utility-get-storage-config'),
+    path('utility/credit-based-function-demo/', credit_based_function_demo, name='credit-based-function-demo'),
     
     # Auth endpoints
     path('auth/signup/', auth_view.signup, name='auth-signup'),
