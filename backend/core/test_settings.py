@@ -33,30 +33,42 @@ PASSWORD_HASHERS = [
 ]
 
 # Override REST_FRAMEWORK settings for testing
-# Use a simpler authentication class that doesn't validate tokens
+# Make sure to include the SupabaseJWTAuthentication class
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        "apps.authentication.authentication.SupabaseJWTAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ],
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
 }
 
-# Disable middleware that might slow down tests
+# Ensure the Supabase JWT middleware is included
 # We're referencing MIDDLEWARE from the imported settings
 MIDDLEWARE = [m for m in MIDDLEWARE if not m.startswith('django.middleware.csrf')]
 
-# Disable logging during tests
+# Make sure the Supabase JWT middleware is included
+if 'apps.authentication.middleware.SupabaseJWTMiddleware' not in MIDDLEWARE:
+    MIDDLEWARE.append('apps.authentication.middleware.SupabaseJWTMiddleware')
+
+# Disable logging during tests except for test logger
 LOGGING = {
     'version': 1,
-    'disable_existing_loggers': True,
+    'disable_existing_loggers': False,
     'handlers': {
-        'null': {
-            'class': 'logging.NullHandler',
+        'console': {
+            'class': 'logging.StreamHandler',
         },
     },
     'loggers': {
-        '': {
-            'handlers': ['null'],
+        'test': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+        # Disable other loggers
+        'django': {
+            'handlers': ['console'],
+            'level': 'ERROR',
             'propagate': False,
         },
     },

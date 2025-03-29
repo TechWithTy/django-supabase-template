@@ -2,9 +2,12 @@ from typing import Any, Dict, List, Optional
 
 from django.conf import settings
 from rest_framework import status, permissions
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.request import Request
 from rest_framework.response import Response
+
+# Import the SupabaseJWTAuthentication class
+from apps.authentication.authentication import SupabaseJWTAuthentication
 
 # Import the SupabaseRealtimeService directly
 from apps.supabase_home.realtime import SupabaseRealtimeService
@@ -14,6 +17,7 @@ realtime_service = SupabaseRealtimeService()
 
 
 @api_view(["POST"])
+@authentication_classes([SupabaseJWTAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def subscribe_to_channel(request: Request) -> Response:
     """
@@ -43,7 +47,7 @@ def subscribe_to_channel(request: Request) -> Response:
         response = realtime_service.subscribe_to_channel(
             channel=channel, event=event, auth_token=auth_token
         )
-        return Response(response, status=status.HTTP_200_OK)
+        return Response(response, status=status.HTTP_201_CREATED)  
     except Exception as e:
         return Response(
             {"error": f"Failed to subscribe to channel: {str(e)}"},
@@ -52,6 +56,7 @@ def subscribe_to_channel(request: Request) -> Response:
 
 
 @api_view(["POST"])
+@authentication_classes([SupabaseJWTAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def unsubscribe_from_channel(request: Request) -> Response:
     """
@@ -88,6 +93,7 @@ def unsubscribe_from_channel(request: Request) -> Response:
 
 
 @api_view(["POST"])
+@authentication_classes([SupabaseJWTAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def unsubscribe_all(request: Request) -> Response:
     """
@@ -111,6 +117,7 @@ def unsubscribe_all(request: Request) -> Response:
 
 
 @api_view(["GET"])
+@authentication_classes([SupabaseJWTAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def get_channels(request: Request) -> Response:
     """
@@ -134,6 +141,7 @@ def get_channels(request: Request) -> Response:
 
 
 @api_view(["POST"])
+@authentication_classes([SupabaseJWTAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def broadcast_message(request: Request) -> Response:
     """
@@ -148,15 +156,21 @@ def broadcast_message(request: Request) -> Response:
     event = request.data.get("event")
     payload = request.data.get("payload")
 
-    if not channel or not event or not payload:
+    if not channel:
         return Response(
-            {"error": "Channel, event, and payload are required"},
+            {"error": "Channel name is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    if not isinstance(payload, dict):
+    if not event:
         return Response(
-            {"error": "Payload must be a JSON object"},
+            {"error": "Event name is required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if payload is None:  
+        return Response(
+            {"error": "Message payload is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
 

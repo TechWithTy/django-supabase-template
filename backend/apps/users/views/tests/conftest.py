@@ -50,9 +50,6 @@ class CustomAuthentication(BaseAuthentication):
             return (user, token_obj)
         return None
 
-    def authenticate_header(self, request):
-        return 'Bearer'
-
 @pytest.fixture(scope="session")
 def test_user_credentials():
     """Test user credentials for Supabase integration tests"""
@@ -126,44 +123,74 @@ def authenticated_client(test_user_credentials):
     
     return client
 
+# Use django_db_setup fixture to ensure database is set up for session fixtures
 @pytest.fixture(scope="session")
-def test_django_user(test_user_credentials):
+def django_db_setup(django_db_setup, django_db_blocker):
+    """Set up the database for session-scoped fixtures"""
+    pass
+
+@pytest.fixture(scope="session")
+def test_django_user(test_user_credentials, django_db_setup, django_db_blocker):
     """Create a test user in the Django database
     
     This creates a Django User model instance matching the Supabase user
     for testing endpoints that require Django database user records.
     """
-    if not test_user_credentials or not test_user_credentials.get("id"):
-        pytest.skip("No valid test user credentials available")
-    
-    # Create or get the UserProfile
-    user, created = UserProfile.objects.get_or_create(
-        id=test_user_credentials["id"],
-        defaults={
-            "email": test_user_credentials["email"],
-            "first_name": "Test",
-            "last_name": "User",
-            "credits": 1000,  # Give plenty of credits for testing credit-based views
-        }
-    )
-    
-    if not created:
-        # Ensure the user has enough credits for our tests
-        if user.credits < 1000:
-            user.credits = 1000
-            user.save()
-    
-    return user
+    with django_db_blocker.unblock():
+        if not test_user_credentials or not test_user_credentials.get("id"):
+            pytest.skip("No valid test user credentials available")
+        
+        # Import the User model
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        
+        # First create the auth user
+        auth_user, auth_created = User.objects.get_or_create(
+            username=test_user_credentials["email"],
+            defaults={
+                "email": test_user_credentials["email"],
+                "first_name": "Test",
+                "last_name": "User",
+                "supabase_uid": test_user_credentials["id"]
+            }
+        )
+        
+        # Generate a UUID for the UserProfile
+        profile_id = uuid.uuid4()
+        
+        # Then create or get the UserProfile
+        try:
+            # Try to get existing profile
+            user_profile = UserProfile.objects.get(user=auth_user)
+            profile_created = False
+        except UserProfile.DoesNotExist:
+            # Create new profile with explicit UUID
+            user_profile = UserProfile.objects.create(
+                id=profile_id,
+                user=auth_user,
+                supabase_uid=test_user_credentials["id"],
+                credits_balance=1000  # Give plenty of credits for testing credit-based views
+            )
+            profile_created = True
+        
+        if not profile_created:
+            # Ensure the user has enough credits for our tests
+            if user_profile.credits_balance < 1000:
+                user_profile.credits_balance = 1000
+                user_profile.save()
+        
+        return user_profile
 
 @pytest.fixture(scope="session")
-def test_admin_django_user(test_django_user):
+def test_admin_django_user(test_django_user, django_db_blocker):
     """Create a test admin user in the Django database"""
-    # Make the test user an admin
-    test_django_user.is_staff = True
-    test_django_user.is_superuser = True
-    test_django_user.save()
-    
-    return test_django_user
+    with django_db_blocker.unblock():
+        # Make the test user an admin
+        test_django_user.user.is_staff = True
+        test_django_user.user.is_superuser = True
+        test_django_user.user.save()
+        
+        return test_django_user
 
 @pytest.fixture(scope="session")
 def supabase_services():
@@ -176,7 +203,7 @@ def supabase_services():
     }
 
 @pytest.fixture(scope="session")
-def test_bucket(test_user_credentials, supabase_services):
+def test_bucket(test_user_credentials, supabase_services, django_db_blocker):
     """Create a test bucket for storage tests"""
     # Skip if no auth token
     if not test_user_credentials or not test_user_credentials.get("auth_token"):
@@ -219,7 +246,7 @@ def test_bucket(test_user_credentials, supabase_services):
         yield None
 
 @pytest.fixture(scope="session")
-def test_table(test_user_credentials, supabase_services):
+def test_table(test_user_credentials, supabase_services, django_db_blocker):
     """Create a test table for database tests"""
     # Skip if no auth token
     if not test_user_credentials or not test_user_credentials.get("auth_token"):

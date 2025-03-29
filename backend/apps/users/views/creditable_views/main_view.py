@@ -1,7 +1,7 @@
 import subprocess
 import os
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 from django.conf import settings
 from rest_framework import status
@@ -13,6 +13,9 @@ from rest_framework.response import Response
 from apps.users.models import UserProfile
 from apps.credits.models import CreditTransaction
 
+import logging
+logger = logging.getLogger('django')
+logger.setLevel(logging.DEBUG)
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
@@ -52,13 +55,50 @@ def execute_main_script(request: Request) -> Response:
                     status=status.HTTP_400_BAD_REQUEST,
                 )
     
+    # Check if the user is authenticated before proceeding
+    if not request.user.is_authenticated:
+        return Response(
+            {"error": "Authentication required"},
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+    
     # Get the user's profile
     try:
-        profile, created = UserProfile.objects.get_or_create(
-            user=request.user, 
-            defaults={"supabase_uid": request.user.username}
-        )
+        logger.debug(f"Getting profile for user: {request.user.username} (ID: {request.user.id})")
+        # First try to get by user reference
+        try:
+            profile = UserProfile.objects.get(user=request.user)
+            created = False
+            logger.debug(f"Profile found by user reference: {profile.id}")
+        except UserProfile.DoesNotExist:
+            # If not found by user, try to create it
+            # Get supabase_uid from user or use username as fallback
+            supabase_uid = getattr(request.user, 'supabase_uid', None) or request.user.username
+            logger.debug(f"Using supabase_uid: {supabase_uid}")
+            
+            # Make sure we don't duplicate supabase_uid
+            existing_profile = UserProfile.objects.filter(supabase_uid=supabase_uid).first()
+            if existing_profile:
+                # If a profile with this supabase_uid exists, use it and update the user reference
+                profile = existing_profile
+                profile.user = request.user
+                profile.save(update_fields=['user'])
+                created = False
+                logger.debug(f"Profile found by supabase_uid and updated user reference: {profile.id}")
+            else:
+                # Create a new profile
+                profile = UserProfile.objects.create(
+                    user=request.user,
+                    supabase_uid=supabase_uid
+                )
+                created = True
+                logger.debug(f"New profile created: {profile.id}")
+        
+        logger.debug(f"Profile found/created: {profile.id}, created: {created}")
     except Exception as e:
+        logger.error(f"Failed to retrieve user profile: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         return Response(
             {"error": f"Failed to retrieve user profile: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -66,6 +106,7 @@ def execute_main_script(request: Request) -> Response:
     
     # Check if the user has enough credits (skip for admins if they set credits to 0)
     if credit_amount > 0 and not profile.has_sufficient_credits(credit_amount):
+        logger.debug(f"User {request.user.username} has insufficient credits: {profile.credits_balance} < {credit_amount}")
         return Response(
             {
                 "error": "Insufficient credits",
@@ -85,6 +126,7 @@ def execute_main_script(request: Request) -> Response:
         
         # Check if the script exists
         if not os.path.exists(main_script_path):
+            logger.error(f"Script not found: {main_script_path}")
             return Response(
                 {"error": "Script not found. This template requires a main.py file in the root directory."},
                 status=status.HTTP_404_NOT_FOUND,
@@ -97,6 +139,8 @@ def execute_main_script(request: Request) -> Response:
         for key, value in parameters.items():
             command.append(f"--{key}={value}")
         
+        logger.debug(f"Running command: {' '.join(command)}")
+        
         # Run the script and capture output
         result = subprocess.run(
             command,
@@ -105,8 +149,10 @@ def execute_main_script(request: Request) -> Response:
             check=False,  # Don't raise an exception on non-zero exit
         )
         
-        # Only deduct credits if the amount is greater than 0
-        if credit_amount > 0:
+        logger.debug(f"Script execution result: {result.returncode}")
+        
+        # Only deduct credits if the script executed successfully and the amount is greater than 0
+        if result.returncode == 0 and credit_amount > 0:
             # Deduct credits from the user's account
             profile.deduct_credits(credit_amount)
             
@@ -125,6 +171,9 @@ def execute_main_script(request: Request) -> Response:
         return Response(response_data, status=status.HTTP_200_OK)
         
     except Exception as e:
+        logger.error(f"Failed to execute script: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         return Response(
             {"error": f"Failed to execute script: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
