@@ -63,7 +63,7 @@ class TestMainViews:
                 self.admin_user.credits_balance = 1000
                 self.admin_user.save()
     
-    def test_main_script_execution_success(self, authenticated_client, monkeypatch, django_db_blocker):
+    def test_main_script_execution_success(self, monkeypatch, django_db_blocker):
         """Test successful script execution with real Supabase auth"""
         # Mock os.path.exists and subprocess.run to avoid actual script execution
         monkeypatch.setattr('os.path.exists', lambda path: True)
@@ -88,10 +88,14 @@ class TestMainViews:
         logger = logging.getLogger('django')
         logger.setLevel(logging.DEBUG)
         
-        # Make request using authenticated client
+        # Setup client with test user
+        client = APIClient()
+        client.force_authenticate(user=self.test_user.user)
+        
+        # Make request
         url = reverse('users:run_main_script')
         try:
-            response = authenticated_client.post(url, self.script_params, format='json')
+            response = client.post(url, self.script_params, format='json')
             print(f"Response status: {response.status_code}")
             print(f"Response data: {response.data}")
         except Exception as e:
@@ -201,14 +205,18 @@ class TestMainViews:
                 transaction = transactions.first()
                 assert transaction.amount == 0 or transaction.amount > -5  # Custom low or zero cost
     
-    def test_main_script_not_found(self, authenticated_client, monkeypatch, django_db_blocker):
+    def test_main_script_not_found(self, monkeypatch, django_db_blocker):
         """Test script not found with real Supabase auth"""
         # Mock file doesn't exist
         monkeypatch.setattr('os.path.exists', lambda path: False)
+
+        # Setup client with test user
+        client = APIClient()
+        client.force_authenticate(user=self.test_user.user)
         
         # Make request
         url = reverse('users:run_main_script')
-        response = authenticated_client.post(url, self.script_params, format='json')
+        response = client.post(url, self.script_params, format='json')
         
         # Assertions
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -222,7 +230,7 @@ class TestMainViews:
             self.test_user.refresh_from_db()
             assert self.test_user.credits_balance == 1000  # Unchanged
     
-    def test_main_script_execution_error(self, authenticated_client, monkeypatch, django_db_blocker):
+    def test_main_script_execution_error(self, monkeypatch, django_db_blocker):
         """Test script execution error with real Supabase auth"""
         # Mock file existence but script execution fails
         monkeypatch.setattr('os.path.exists', lambda path: True)
@@ -239,9 +247,13 @@ class TestMainViews:
 
         monkeypatch.setattr('subprocess.run', mock_run)
 
+        # Setup client with test user
+        client = APIClient()
+        client.force_authenticate(user=self.test_user.user)
+        
         # Make request
         url = reverse('users:run_main_script')
-        response = authenticated_client.post(url, self.script_params, format='json')
+        response = client.post(url, self.script_params, format='json')
 
         # Assertions
         assert response.status_code == status.HTTP_200_OK  # The view returns 200 even for script errors
@@ -252,27 +264,15 @@ class TestMainViews:
             # Check that no credit transaction was created since script execution failed
             assert CreditTransaction.objects.filter(user=self.test_user.user).count() == 0
     
-    def test_unauthenticated_request(self, django_db_blocker):
+    def test_unauthenticated_request(self):
         """Test unauthenticated request with real Supabase"""
-        # Make request without authentication
+        # Create a fresh client with no authentication
         client = APIClient()
-        # Ensure no auth header is set
-        client.credentials()  # Clear any default credentials
-        url = reverse('users:run_main_script')
+        # Explicitly clear any credentials to ensure no auth header is sent
+        client.credentials()
         
-        try:
-            response = client.post(url, self.script_params, format='json')
-            
-            # Assertions
-            assert response.status_code == status.HTTP_401_UNAUTHORIZED
-        finally:
-            # Clean up any orphaned UserProfiles that might have been created
-            with django_db_blocker.unblock():
-                # Find any UserProfiles with invalid user references
-                from django.db import connection
-                with connection.cursor() as cursor:
-                    # Find UserProfiles with user_ids that don't exist in CustomUser table
-                    cursor.execute("""
-                        DELETE FROM users_userprofile 
-                        WHERE user_id NOT IN (SELECT id FROM authentication_customuser)
-                    """)
+        url = reverse('users:run_main_script')
+        response = client.post(url, self.script_params, format='json')
+        
+        # Assertions
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED

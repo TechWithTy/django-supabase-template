@@ -1,6 +1,5 @@
 from typing import Optional, Tuple, Any
 from django.conf import settings
-from django.contrib.auth.models import AnonymousUser
 from django.contrib.auth import get_user_model
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
@@ -61,6 +60,28 @@ class SupabaseJWTAuthentication(BaseAuthentication):
                     is_active=True
                 )
                 logger.info(f"Created new user with Supabase ID: {user_id}")
+                
+                # Create a UserProfile for the new user
+                from apps.users.models import UserProfile
+                
+                try:
+                    # Try to get an existing profile first
+                    user_profile, created = UserProfile.objects.get_or_create(
+                        supabase_uid=user_id,
+                        defaults={
+                            'user': user,
+                            'credits_balance': 0  # Start with 0 credits
+                        }
+                    )
+                    
+                    # If the profile exists but is linked to a different user, update it
+                    if not created and user_profile.user != user:
+                        user_profile.user = user
+                        user_profile.save()
+                        
+                    logger.info(f"{'Created' if created else 'Updated'} UserProfile for user with Supabase ID: {user_id}")
+                except Exception as e:
+                    logger.error(f"Error creating/updating UserProfile: {str(e)}")
             
             # Add Supabase claims to the user object for use in permission checks
             user.supabase_claims = payload.get('claims', {})
