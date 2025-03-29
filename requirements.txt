@@ -5,6 +5,7 @@ django-cors-headers==4.3.1
 django-filter==23.5
 django-csp==3.8
 django-redis==5.4.0
+django-db-connection-pool==1.2.2
 
 # Database
 psycopg2-binary==2.9.9
@@ -22,7 +23,7 @@ redis==5.0.1
 # Monitoring and Logging
 sentry-sdk==1.39.1
 prometheus-client==0.19.0
-django-prometheus==2.3.1 
+django-prometheus==2.3.1
 
 # Utilities
 python-dotenv==1.0.0

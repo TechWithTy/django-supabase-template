@@ -96,7 +96,7 @@ services:
     image: prom/prometheus:v2.44.0
     restart: unless-stopped
     volumes:
-      - ./prometheus:/etc/prometheus
+      - ./config/prometheus:/etc/prometheus
       - prometheus-data:/prometheus
     command:
       - --config.file=/etc/prometheus/prometheus.yml
@@ -106,6 +106,53 @@ services:
       - --web.enable-lifecycle
     ports:
       - "9090:9090"
+    networks:
+      - app-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:9.5.2
+    restart: unless-stopped
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3000:3000"
+    networks:
+      - app-network
+    depends_on:
+      - prometheus
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # Node exporter for system metrics
+  node-exporter:
+    image: prom/node-exporter:v1.5.0
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.rootfs=/rootfs
+      - --path.sysfs=/host/sys
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    ports:
+      - "9100:9100"
     networks:
       - app-network
     logging:
@@ -128,6 +175,8 @@ services:
       - "443:443"
     depends_on:
       - backend
+      - grafana
+      - prometheus
     networks:
       - app-network
     logging:
@@ -145,3 +194,4 @@ volumes:
   media-data:
   redis-data:
   prometheus-data:
+  grafana-data:

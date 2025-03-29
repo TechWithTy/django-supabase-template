@@ -1,0 +1,29 @@
+groups:
+  - name: django_alerts
+    rules:
+      - alert: HighErrorRate
+        expr: rate(api_requests_total{status=~"5.."}[5m]) / rate(api_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate on {{ $labels.endpoint }}"
+          description: "Error rate is above 5% for {{ $labels.endpoint }} (current value: {{ $value }})"
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, sum(rate(api_request_latency_seconds_bucket[5m])) by (le, endpoint)) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency on {{ $labels.endpoint }}"
+          description: "95th percentile of response time is above 1s for {{ $labels.endpoint }}"
+
+      - alert: AnomalyDetected
+        expr: sum(increase(anomaly_detection_triggered_total[5m])) by (endpoint, reason) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Anomaly detected on {{ $labels.endpoint }}"
+          description: "Anomaly reason: {{ $labels.reason }} ({{ $value }} incidents in last 5 minutes)"

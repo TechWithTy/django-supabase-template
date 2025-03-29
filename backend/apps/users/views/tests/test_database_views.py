@@ -479,10 +479,8 @@ class TestThrottling(TestCase):
         """Test that throttling works correctly by directly testing the throttle class"""
         from rest_framework.throttling import UserRateThrottle
         from rest_framework.test import APIRequestFactory
-        from django.contrib.auth.models import AnonymousUser
         from rest_framework.views import APIView
         from rest_framework.response import Response
-        from rest_framework.request import Request
         
         # Create a test throttle class with very restrictive rate
         class TestUserThrottle(UserRateThrottle):

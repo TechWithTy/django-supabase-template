@@ -12,6 +12,7 @@ urlpatterns = [
     path('api/', include('apps.authentication.urls')),
     path('api/', include('apps.users.urls', namespace='users')),
     path('api/', include('apps.credits.urls')),
+    path('api/', include('apps.monitoring.urls', namespace='monitoring')),  # Added monitoring URLs
     
     # Prometheus metrics
     path('metrics/', ExportToDjangoView, name='prometheus-metrics'),

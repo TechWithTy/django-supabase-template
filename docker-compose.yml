@@ -12,7 +12,7 @@ services:
     depends_on:
       - redis
     env_file:
-      - .env.local
+      - .env
     command: >-
       sh -c "python manage.py migrate &&
              python manage.py runserver 0.0.0.0:8000"
@@ -41,7 +41,7 @@ services:
       - redis
       - backend
     env_file:
-      - .env.local
+      - .env
     networks:
       - app-network
 
@@ -57,7 +57,7 @@ services:
       - redis
       - backend
     env_file:
-      - .env.local
+      - .env
     networks:
       - app-network
 
@@ -76,11 +76,32 @@ services:
       - '--web.console.templates=/usr/share/prometheus/consoles'
     networks:
       - app-network
+    restart: unless-stopped
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning
+      - ./config/grafana/dashboards:/etc/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - app-network
+    restart: unless-stopped
 
 volumes:
   redis-data:
   prometheus-data:
   sqlite-data:
+  grafana-data:
 
 networks:
   app-network:
