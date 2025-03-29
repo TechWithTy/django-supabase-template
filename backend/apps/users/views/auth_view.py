@@ -4,6 +4,9 @@ from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.request import Request
 from rest_framework.response import Response
+from django.core.cache import cache
+import hashlib
+import logging
 
 # Import the SupabaseAuthService directly
 from apps.supabase_home.auth import (
@@ -11,11 +14,21 @@ from apps.supabase_home.auth import (
     # Import specific functions from SupabaseAuthService
 )
 
+# Import Redis cache utilities
+from apps.caching.utils.redis_cache import (
+    cache_result,
+    get_cached_result,
+    get_or_set_cache,
+    invalidate_cache
+)
+
 from ..models import UserProfile
 from ..serializers import UserSerializer, UserProfileSerializer
 
 # Import custom throttling classes
 from apps.authentication.throttling import IPRateThrottle, IPBasedUserRateThrottle
+
+logger = logging.getLogger(__name__)
 
 auth_service = SupabaseAuthService()
 
@@ -659,22 +672,39 @@ def get_current_user(request: Request) -> Response:
         
         token = auth_header.split(' ')[1]
         
-        # Get user information from the token
-        user_info = auth_service.get_user_by_token(token)
+        # Generate a cache key based on the token
+        # Use a hash for security (avoid storing tokens in cache keys)
+        token_hash = hashlib.md5(token.encode()).hexdigest()
+        cache_key = f"user_info:{token_hash}"
+        
+        # Try to get user info from cache first
+        user_info = get_cached_result(cache_key)
+        
+        if user_info is None:
+            # Cache miss - get user information from the token
+            logger.debug("Cache miss for user info, fetching from auth service")
+            user_info = auth_service.get_user_by_token(token)
+            
+            # Cache the result for 5 minutes (300 seconds)
+            # Short timeout to ensure we don't serve stale user data for too long
+            cache.set(cache_key, user_info, timeout=300)
+        else:
+            logger.debug("Cache hit for user info")
         
         return Response(user_info, status=status.HTTP_200_OK)
     except Exception as e:
         error_message = str(e)
-        # Check if the error is related to authentication
-        if "401" in error_message or "403" in error_message or "session_not_found" in error_message or "authentication" in error_message.lower():
-            # Return 401 Unauthorized for authentication-related errors
+        
+        # Log the error for debugging
+        logger.error(f"Error retrieving current user: {error_message}")
+        
+        if "token is invalid" in error_message.lower() or "token has expired" in error_message.lower():
             return Response(
-                {"error": "Authentication failed"},
+                {"error": "Authentication token is invalid or has expired"},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
-        else:
-            # For other errors, return 500 Internal Server Error
-            return Response(
-                {"error": f"Failed to get user information: {error_message}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        
+        return Response(
+            {"error": f"Failed to retrieve user information: {error_message}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

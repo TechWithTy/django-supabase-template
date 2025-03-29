@@ -51,11 +51,9 @@ class PrometheusMonitoringMiddleware(MiddlewareMixin):
                 elif latency > 1.0:  # 1 second threshold for slow requests
                     ANOMALY_DETECTION_TRIGGERED.labels(endpoint=endpoint, reason='high_latency').inc()
             else:
-                # Gradually reduce error rate if no errors
-                current_error_rate = API_ERROR_RATE.labels(endpoint=endpoint)._value.get((endpoint,), 0)
-                if current_error_rate > 0:
-                    API_ERROR_RATE.labels(endpoint=endpoint).set(max(0, current_error_rate - 0.1))
-            
+                # Fixed: Don't try to access internal _value attribute - just set to 0 for success cases
+                API_ERROR_RATE.labels(endpoint=endpoint).set(0)
+           
         return response
     
     def _get_endpoint_name(self, path):
@@ -66,6 +64,7 @@ class PrometheusMonitoringMiddleware(MiddlewareMixin):
         - /api/credits/balance/ -> credits
         """
         parts = path.strip('/').split('/')
-        if len(parts) > 1 and parts[0] == 'api':
+        if len(parts) > 1 and parts[0] == 'api' and len(parts) > 1:
+            # Return the first resource segment after 'api'
             return parts[1]
         return 'unknown'
