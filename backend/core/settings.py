@@ -39,6 +39,7 @@ THIRD_PARTY_APPS = [
     "django_prometheus",
     "django_filters",
     "csp",  # Added for Content Security Policy
+    "django.middleware.gzip",  # Added for response compression
 ]
 
 LOCAL_APPS = [
@@ -52,6 +53,7 @@ INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
 MIDDLEWARE = [
     "django_prometheus.middleware.PrometheusBeforeMiddleware",  # Prometheus first
+    "django.middleware.gzip.GZipMiddleware",  # Response compression
     "csp.middleware.CSPMiddleware",  # Added for Content Security Policy
     "django.middleware.security.SecurityMiddleware",
     "corsheaders.middleware.CorsMiddleware",  # CORS before CommonMiddleware
@@ -139,15 +141,20 @@ print("Supabase URL:", SUPABASE_URL)
 # Database configurations
 DATABASES = {
     "local": {
-        "ENGINE": "django.db.backends.postgresql",
+        "ENGINE": "dj_db_conn_pool.backends.postgresql",
         "NAME": LOCAL_DB_NAME,
         "USER": LOCAL_DB_USER,
         "PASSWORD": LOCAL_DB_PASSWORD,
         "HOST": LOCAL_DB_HOST,
         "PORT": LOCAL_DB_PORT,
+        "POOL_OPTIONS": {
+            "POOL_SIZE": 20,
+            "MAX_OVERFLOW": 10,
+            "RECYCLE": 300,  # Connection recycle time in seconds
+        },
     },
     "supabase": {
-        "ENGINE": "django.db.backends.postgresql",
+        "ENGINE": "dj_db_conn_pool.backends.postgresql",
         "NAME": SUPABASE_DB_NAME,
         "USER": SUPABASE_DB_USER,
         "PASSWORD": SUPABASE_DB_PASSWORD,
@@ -155,6 +162,11 @@ DATABASES = {
         "PORT": SUPABASE_DB_PORT,
         "OPTIONS": {
             "sslmode": "require",  # Supabase requires SSL
+        },
+        "POOL_OPTIONS": {
+            "POOL_SIZE": 20,
+            "MAX_OVERFLOW": 10,
+            "RECYCLE": 300,  # Connection recycle time in seconds
         },
     },
 }
