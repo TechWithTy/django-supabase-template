@@ -1,7 +1,7 @@
 import hashlib
 import json
 import time
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from django.test import TestCase, RequestFactory, override_settings
 from django.core.cache import cache
