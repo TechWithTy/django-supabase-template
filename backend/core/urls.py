@@ -14,6 +14,7 @@ urlpatterns = [
     path('api/', include('apps.credits.urls')),
     path('api/', include('apps.monitoring.urls', namespace='monitoring')),  # Added monitoring URLs
     path('api/cache/', include('apps.caching.urls')),  # Added caching URLs
+    path('api/stripe/', include(('apps.stripe_home.urls', 'stripe'), namespace='stripe')),  # Added Stripe URLs with namespace
     
     # Prometheus metrics
     path('metrics/', ExportToDjangoView, name='prometheus-metrics'),

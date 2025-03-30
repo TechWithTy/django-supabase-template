@@ -52,6 +52,7 @@ LOCAL_APPS = [
     "apps.credits",
     "apps.monitoring",  # Added monitoring app
     "apps.caching",  # Added caching app
+    "apps.stripe_home",  # Stripe integration app with full module path
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS

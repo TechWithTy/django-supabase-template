@@ -50,6 +50,15 @@ MIDDLEWARE = [m for m in MIDDLEWARE if not m.startswith('django.middleware.csrf'
 if 'apps.authentication.middleware.SupabaseJWTMiddleware' not in MIDDLEWARE:
     MIDDLEWARE.append('apps.authentication.middleware.SupabaseJWTMiddleware')
 
+# Stripe Configuration for Tests
+STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY', 'sk_test_example_key')
+STRIPE_PUBLISHABLE_KEY = os.getenv('STRIPE_PUBLISHABLE_KEY', 'pk_test_example_key')
+STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET_TEST', 'whsec_example_secret')
+
+# Force test mode for safety
+if 'test' not in STRIPE_SECRET_KEY and not STRIPE_SECRET_KEY.startswith('sk_test_'):
+    STRIPE_SECRET_KEY = 'sk_test_example_key'  # Fallback to safe test key
+
 # Disable logging during tests except for test logger
 LOGGING = {
     'version': 1,
