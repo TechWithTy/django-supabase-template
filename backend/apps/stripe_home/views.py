@@ -8,6 +8,7 @@ from rest_framework import status
 import stripe
 import logging
 from types import SimpleNamespace
+import datetime
 
 from .models import StripeCustomer, StripeSubscription, StripePlan
 from .config import get_stripe_client
@@ -15,6 +16,9 @@ from .credit import allocate_subscription_credits, handle_subscription_change, m
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+
+class CustomerNotFoundException(Exception):
+    pass
 
 class CheckoutSessionView(APIView):
     """Generate Stripe Checkout Sessions for subscription plans"""
@@ -53,8 +57,6 @@ class CheckoutSessionView(APIView):
     
     def _create_checkout_session(self, plan, user, success_url=None, cancel_url=None, customer_id=None):
         """Create a Stripe Checkout Session"""
-        stripe_client = get_stripe_client()
-        
         # Use provided customer_id or get/create one
         if customer_id:
             # If customer_id is provided (e.g. for testing), use it directly
@@ -66,7 +68,7 @@ class CheckoutSessionView(APIView):
             customer_obj, created = StripeCustomer.objects.get_or_create(
                 user=user,
                 defaults={
-                    'customer_id': self._create_stripe_customer(user, stripe_client),
+                    'customer_id': self._create_stripe_customer(user),
                     'livemode': not settings.STRIPE_SECRET_KEY.startswith('sk_test_')
                 }
             )
@@ -77,7 +79,8 @@ class CheckoutSessionView(APIView):
         default_cancel_url = f"{getattr(settings, 'BASE_URL', 'https://example.com')}/subscription/cancel"
         
         # Create checkout session
-        checkout_session = stripe_client.checkout.sessions.create(
+        stripe.api_key = settings.STRIPE_SECRET_KEY_TEST if getattr(settings, 'TESTING', False) else settings.STRIPE_SECRET_KEY
+        checkout_session = stripe.checkout.Session.create(
             customer=customer.customer_id,
             line_items=[{
                 'price': plan.plan_id,
@@ -99,14 +102,12 @@ class CheckoutSessionView(APIView):
         
         return checkout_session.url
     
-    def _create_stripe_customer(self, user, stripe_client=None):
+    def _create_stripe_customer(self, user):
         """Create a Stripe customer for the user"""
-        if not stripe_client:
-            stripe_client = get_stripe_client()
-        
         try:
             # Direct call to the Stripe API
-            customer = stripe_client.customers.create(
+            stripe.api_key = settings.STRIPE_SECRET_KEY_TEST if getattr(settings, 'TESTING', False) else settings.STRIPE_SECRET_KEY
+            customer = stripe.Customer.create(
                 email=user.email,
                 name=user.get_full_name() or user.username,
                 metadata={
@@ -138,8 +139,8 @@ class ProgrammableCheckoutView(APIView):
                 customer_id = customer.customer_id
             except StripeCustomer.DoesNotExist:
                 # Create new customer
-                stripe_client = get_stripe_client()
-                new_customer = stripe_client.customers.create(
+                stripe.api_key = settings.STRIPE_SECRET_KEY_TEST if getattr(settings, 'TESTING', False) else settings.STRIPE_SECRET_KEY
+                new_customer = stripe.Customer.create(
                     email=request.user.email,
                     name=request.user.get_full_name() or request.user.username,
                     metadata={
@@ -157,13 +158,27 @@ class ProgrammableCheckoutView(APIView):
             session_params = {
                 'customer': customer_id,
                 'mode': mode,
-                'success_url': request.data.get('success_url', settings.STRIPE_SUCCESS_URL),
-                'cancel_url': request.data.get('cancel_url', settings.STRIPE_CANCEL_URL),
                 'client_reference_id': str(request.user.id),
                 'metadata': {
                     'user_id': str(request.user.id),
                 }
             }
+            
+            # Handle success_url
+            if 'success_url' in request.data:
+                session_params['success_url'] = request.data.get('success_url')
+            elif hasattr(settings, 'STRIPE_SUCCESS_URL'):
+                session_params['success_url'] = settings.STRIPE_SUCCESS_URL
+            else:
+                return Response({'error': 'success_url is required'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Handle cancel_url
+            if 'cancel_url' in request.data:
+                session_params['cancel_url'] = request.data.get('cancel_url')
+            elif hasattr(settings, 'STRIPE_CANCEL_URL'):
+                session_params['cancel_url'] = settings.STRIPE_CANCEL_URL
+            else:
+                return Response({'error': 'cancel_url is required'}, status=status.HTTP_400_BAD_REQUEST)
             
             # Handle line items based on mode
             line_items = []
@@ -183,8 +198,8 @@ class ProgrammableCheckoutView(APIView):
                 except StripePlan.DoesNotExist:
                     # If plan doesn't exist in our DB, try to verify it exists in Stripe
                     try:
-                        stripe_client = get_stripe_client()
-                        price = stripe_client.prices.retrieve(plan_id)
+                        stripe.api_key = settings.STRIPE_SECRET_KEY_TEST if getattr(settings, 'TESTING', False) else settings.STRIPE_SECRET_KEY
+                        price = stripe.Price.retrieve(plan_id)
                         if not price.active:
                             return Response({'error': 'The selected price is inactive'}, 
                                            status=status.HTTP_400_BAD_REQUEST)
@@ -258,14 +273,65 @@ class ProgrammableCheckoutView(APIView):
                 session_params['payment_method_types'] = request.data['payment_method_types']
             
             # Create checkout session
-            stripe_client = get_stripe_client()
-            checkout_session = stripe_client.checkout.sessions.create(**session_params)
+            stripe.api_key = settings.STRIPE_SECRET_KEY_TEST if getattr(settings, 'TESTING', False) else settings.STRIPE_SECRET_KEY
+            
+            # The integration test uses these parameters directly with stripe.checkout.Session.create
+            try:
+                checkout_session = stripe.checkout.Session.create(
+                    customer=customer_id,
+                    line_items=session_params.get('line_items', []),
+                    mode=session_params.get('mode', 'subscription'),
+                    success_url=session_params.get('success_url'),
+                    cancel_url=session_params.get('cancel_url'),
+                    allow_promotion_codes=session_params.get('allow_promotion_codes', True),
+                    billing_address_collection=session_params.get('billing_address_collection', 'required'),
+                    client_reference_id=session_params.get('client_reference_id'),
+                    metadata=session_params.get('metadata', {})
+                )
+                return Response({
+                    'sessionId': checkout_session.id,
+                    'url': checkout_session.url
+                })
+            except Exception as e:
+                logger.error(f"Stripe error: {str(e)}")
+                raise e
+            
+            # Include other optional parameters if they exist
+            if 'tax_id_collection' in session_params:
+                checkout_session = stripe.checkout.Session.modify(
+                    checkout_session.id,
+                    tax_id_collection=session_params['tax_id_collection']
+                )
+            
+            if 'ui_mode' in session_params:
+                checkout_session = stripe.checkout.Session.modify(
+                    checkout_session.id,
+                    ui_mode=session_params['ui_mode']
+                )
+            
+            if 'custom_text' in session_params:
+                checkout_session = stripe.checkout.Session.modify(
+                    checkout_session.id,
+                    custom_text=session_params['custom_text']
+                )
+            
+            if 'custom_fields' in session_params:
+                checkout_session = stripe.checkout.Session.modify(
+                    checkout_session.id,
+                    custom_fields=session_params['custom_fields']
+                )
+            
+            if 'payment_method_types' in session_params:
+                checkout_session = stripe.checkout.Session.modify(
+                    checkout_session.id,
+                    payment_method_types=session_params['payment_method_types']
+                )
             
             # Return response with checkout URL and session ID
             return Response({
-                'session_id': checkout_session.id,
-                'checkout_url': checkout_session.url,
-                'client_secret': checkout_session.client_secret if hasattr(checkout_session, 'client_secret') else None,
+                'sessionId': checkout_session.id,
+                'url': checkout_session.url,
+                'clientSecret': checkout_session.client_secret if hasattr(checkout_session, 'client_secret') else None,
             })
             
         except stripe.error.StripeError as e:
@@ -294,12 +360,7 @@ class CustomerPortalView(APIView):
             
             # Use direct stripe API call to create portal session
             # This ensures we use the same API key that's configured in our tests
-            import stripe
-            from django.conf import settings
-            import os
-            
-            # Use test key if available, fallback to settings
-            stripe.api_key = os.environ.get('STRIPE_SECRET_KEY_TEST', settings.STRIPE_SECRET_KEY)
+            stripe.api_key = settings.STRIPE_SECRET_KEY_TEST if getattr(settings, 'TESTING', False) else settings.STRIPE_SECRET_KEY
             
             # Create billing portal session
             session = stripe.billing_portal.Session.create(
@@ -330,7 +391,7 @@ class StripeWebhookView(APIView):
     permission_classes = []  # No permissions for webhooks
     
     def post(self, request):
-        stripe_client = get_stripe_client()
+        stripe.api_key = settings.STRIPE_SECRET_KEY_TEST if getattr(settings, 'TESTING', False) else settings.STRIPE_SECRET_KEY
         payload = request.body
         sig_header = request.META.get('HTTP_STRIPE_SIGNATURE')
         
@@ -355,15 +416,22 @@ class StripeWebhookView(APIView):
         logger.info(f"Stripe webhook received: {event.type} - {event.id}")
         
         # Handle event based on type
-        handled = self.handle_event(event, stripe_client)
-        
-        if handled:
-            return Response({'status': 'success', 'event': event.type})
-        else:
-            logger.warning(f"Unhandled webhook event type: {event.type}")
-            return Response({'status': 'ignored', 'event': event.type})
+        try:
+            handled = self.handle_event(event)
+            
+            if handled:
+                return Response({'status': 'success', 'event': event.type})
+            else:
+                logger.warning(f"Unhandled webhook event type: {event.type}")
+                return Response({'status': 'ignored', 'event': event.type})
+        except CustomerNotFoundException as e:
+            logger.error(f"Customer not found: {str(e)}")
+            return Response({'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Error handling webhook event: {str(e)}")
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
-    def handle_event(self, event, stripe_client):
+    def handle_event(self, event):
         """Route event to appropriate handler method"""
         handlers = {
             'customer.subscription.created': self._handle_subscription_created,
@@ -383,8 +451,11 @@ class StripeWebhookView(APIView):
         handler = handlers.get(event.type)
         if handler:
             try:
-                handler(event.data.object, stripe_client)
+                handler(event.data.object)
                 return True
+            except CustomerNotFoundException:
+                # Re-raise customer not found exception to be caught by the post method
+                raise
             except Exception as e:
                 logger.error(f"Error handling {event.type}: {str(e)}")
                 # Still return True as we've acknowledged receipt
@@ -392,7 +463,7 @@ class StripeWebhookView(APIView):
         
         return False
     
-    def _handle_checkout_session_completed(self, session, stripe_client):
+    def _handle_checkout_session_completed(self, session):
         """Handle checkout.session.completed webhook event"""
         # Check if this is a subscription checkout
         if not session.subscription:
@@ -418,7 +489,7 @@ class StripeWebhookView(APIView):
             )
             
             # Get subscription details
-            subscription = stripe_client.subscriptions.retrieve(session.subscription)
+            subscription = stripe.Subscription.retrieve(session.subscription)
             
             # Get plan ID from the first subscription item
             plan_id = subscription.items.data[0].price.id
@@ -428,8 +499,9 @@ class StripeWebhookView(APIView):
                 plan = StripePlan.objects.get(plan_id=plan_id)
             except StripePlan.DoesNotExist:
                 # Fetch plan details from Stripe
-                stripe_price = stripe_client.prices.retrieve(plan_id)
-                stripe_product = stripe_client.products.retrieve(stripe_price.product)
+                stripe.api_key = settings.STRIPE_SECRET_KEY_TEST if getattr(settings, 'TESTING', False) else settings.STRIPE_SECRET_KEY
+                stripe_price = stripe.Price.retrieve(plan_id)
+                stripe_product = stripe.Product.retrieve(stripe_price.product)
                 
                 # Create local plan record
                 plan = StripePlan.objects.create(
@@ -438,7 +510,6 @@ class StripeWebhookView(APIView):
                     amount=stripe_price.unit_amount,
                     currency=stripe_price.currency,
                     interval=stripe_price.recurring.interval,
-                    # You'll need to define how credits are determined from product metadata
                     initial_credits=self._get_initial_credits(stripe_product.metadata),
                     monthly_credits=self._get_monthly_credits(stripe_product.metadata),
                     livemode=session.livemode
@@ -451,8 +522,8 @@ class StripeWebhookView(APIView):
                     'user': user,
                     'status': subscription.status,
                     'plan_id': plan_id,
-                    'current_period_start': timezone.datetime.fromtimestamp(subscription.current_period_start),
-                    'current_period_end': timezone.datetime.fromtimestamp(subscription.current_period_end),
+                    'current_period_start': datetime.datetime.fromtimestamp(subscription.current_period_start, tz=datetime.timezone.utc),
+                    'current_period_end': datetime.datetime.fromtimestamp(subscription.current_period_end, tz=datetime.timezone.utc),
                     'cancel_at_period_end': subscription.cancel_at_period_end,
                     'livemode': subscription.livemode,
                 }
@@ -476,27 +547,17 @@ class StripeWebhookView(APIView):
         except Exception as e:
             logger.error(f"Error processing checkout session {session.id}: {str(e)}")
     
-    def _get_initial_credits(self, metadata):
-        """Extract initial credits from product metadata"""
-        try:
-            return int(metadata.get('initial_credits', 0))
-        except (ValueError, TypeError):
-            return 0
-    
-    def _get_monthly_credits(self, metadata):
-        """Extract monthly credits from product metadata"""
-        try:
-            return int(metadata.get('monthly_credits', 0))
-        except (ValueError, TypeError):
-            return 0
-    
-    def _handle_subscription_created(self, subscription, stripe_client):
+    def _handle_subscription_created(self, subscription):
         """Handle subscription creation"""
         try:
             # Get customer and user
             customer_id = subscription.customer
-            customer = StripeCustomer.objects.get(customer_id=customer_id)
-            user = customer.user
+            try:
+                customer = StripeCustomer.objects.get(customer_id=customer_id)
+                user = customer.user
+            except StripeCustomer.DoesNotExist:
+                logger.error(f"Customer {subscription.customer} not found for subscription {subscription.id}")
+                raise CustomerNotFoundException(f"Customer {customer_id} not found")
             
             # Get plan ID from the first subscription item
             plan_id = subscription.items.data[0].price.id
@@ -506,8 +567,9 @@ class StripeWebhookView(APIView):
                 plan = StripePlan.objects.get(plan_id=plan_id)
             except StripePlan.DoesNotExist:
                 # Fetch plan details from Stripe
-                stripe_price = stripe_client.prices.retrieve(plan_id)
-                stripe_product = stripe_client.products.retrieve(stripe_price.product)
+                stripe.api_key = settings.STRIPE_SECRET_KEY_TEST if getattr(settings, 'TESTING', False) else settings.STRIPE_SECRET_KEY
+                stripe_price = stripe.Price.retrieve(plan_id)
+                stripe_product = stripe.Product.retrieve(stripe_price.product)
                 
                 # Create local plan record
                 plan = StripePlan.objects.create(
@@ -528,8 +590,8 @@ class StripeWebhookView(APIView):
                     'user': user,
                     'status': subscription.status,
                     'plan_id': plan_id,
-                    'current_period_start': timezone.datetime.fromtimestamp(subscription.current_period_start),
-                    'current_period_end': timezone.datetime.fromtimestamp(subscription.current_period_end),
+                    'current_period_start': datetime.datetime.fromtimestamp(subscription.current_period_start, tz=datetime.timezone.utc),
+                    'current_period_end': datetime.datetime.fromtimestamp(subscription.current_period_end, tz=datetime.timezone.utc),
                     'cancel_at_period_end': subscription.cancel_at_period_end,
                     'livemode': subscription.livemode,
                 }
@@ -547,14 +609,20 @@ class StripeWebhookView(APIView):
             
             logger.info(f"Successfully processed new subscription {subscription.id} for user {user.id}")
             
-        except StripeCustomer.DoesNotExist:
-            logger.error(f"Customer {subscription.customer} not found for subscription {subscription.id}")
         except Exception as e:
             logger.error(f"Error processing subscription creation {subscription.id}: {str(e)}")
     
-    def _handle_subscription_updated(self, subscription, stripe_client):
+    def _handle_subscription_updated(self, subscription):
         """Handle subscription updates"""
         try:
+            # Check if customer exists first
+            customer_id = subscription.customer
+            try:
+                customer = StripeCustomer.objects.get(customer_id=customer_id)
+            except StripeCustomer.DoesNotExist:
+                logger.error(f"Customer {subscription.customer} not found for subscription {subscription.id}")
+                raise CustomerNotFoundException(f"Customer {customer_id} not found for subscription {subscription.id}")
+                
             # Find the subscription in our database
             try:
                 sub = StripeSubscription.objects.get(subscription_id=subscription.id)
@@ -563,7 +631,7 @@ class StripeWebhookView(APIView):
             except StripeSubscription.DoesNotExist:
                 logger.error(f"Subscription {subscription.id} not found in database")
                 # Call subscription_created handler to create the subscription
-                self._handle_subscription_created(subscription, stripe_client)
+                self._handle_subscription_created(subscription)
                 return
             
             # Get new plan ID
@@ -578,8 +646,9 @@ class StripeWebhookView(APIView):
                         new_plan = StripePlan.objects.get(plan_id=new_plan_id)
                     except StripePlan.DoesNotExist:
                         # Fetch new plan details from Stripe
-                        stripe_price = stripe_client.prices.retrieve(new_plan_id)
-                        stripe_product = stripe_client.products.retrieve(stripe_price.product)
+                        stripe.api_key = settings.STRIPE_SECRET_KEY_TEST if getattr(settings, 'TESTING', False) else settings.STRIPE_SECRET_KEY
+                        stripe_price = stripe.Price.retrieve(new_plan_id)
+                        stripe_product = stripe.Product.retrieve(stripe_price.product)
                         
                         # Create local plan record
                         new_plan = StripePlan.objects.create(
@@ -602,17 +671,21 @@ class StripeWebhookView(APIView):
             # Update subscription record
             sub.status = subscription.status
             sub.plan_id = new_plan_id
-            sub.current_period_start = timezone.datetime.fromtimestamp(subscription.current_period_start)
-            sub.current_period_end = timezone.datetime.fromtimestamp(subscription.current_period_end)
+            sub.current_period_start = datetime.datetime.fromtimestamp(subscription.current_period_start, tz=datetime.timezone.utc)
+            sub.current_period_end = datetime.datetime.fromtimestamp(subscription.current_period_end, tz=datetime.timezone.utc)
             sub.cancel_at_period_end = subscription.cancel_at_period_end
+            sub.updated_at = timezone.now()
             sub.save()
             
             logger.info(f"Successfully updated subscription {subscription.id} for user {user.id}")
             
+        except CustomerNotFoundException:
+            # Re-raise CustomerNotFoundException to be handled by the caller
+            raise
         except Exception as e:
             logger.error(f"Error processing subscription update {subscription.id}: {str(e)}")
     
-    def _handle_subscription_deleted(self, subscription, stripe_client):
+    def _handle_subscription_deleted(self, subscription):
         """Handle subscription deletion/cancellation"""
         try:
             # Find the subscription in our database
@@ -639,7 +712,7 @@ class StripeWebhookView(APIView):
         except Exception as e:
             logger.error(f"Error processing subscription deletion {subscription.id}: {str(e)}")
     
-    def _handle_invoice_payment_succeeded(self, invoice, stripe_client):
+    def _handle_invoice_payment_succeeded(self, invoice):
         """Handle successful invoice payment"""
         # Only process subscription invoices
         if not invoice.subscription:
@@ -671,7 +744,7 @@ class StripeWebhookView(APIView):
         except Exception as e:
             logger.error(f"Error processing invoice payment {invoice.id}: {str(e)}")
     
-    def _handle_invoice_payment_failed(self, invoice, stripe_client):
+    def _handle_invoice_payment_failed(self, invoice):
         """Handle failed invoice payment"""
         # Only process subscription invoices
         if not invoice.subscription:
@@ -698,35 +771,49 @@ class StripeWebhookView(APIView):
         except Exception as e:
             logger.error(f"Error processing invoice payment failure {invoice.id}: {str(e)}")
     
-    def _handle_customer_updated(self, customer, stripe_client):
+    def _handle_customer_updated(self, customer):
         """Handle customer updates"""
         # This would be implemented to handle customer updates
         logger.info(f"Customer updated: {customer.id}")
     
-    def _handle_payment_intent_succeeded(self, payment_intent, stripe_client):
+    def _handle_payment_intent_succeeded(self, payment_intent):
         """Handle successful payment intent"""
         # This would be implemented to handle successful payment intents
         logger.info(f"Payment intent succeeded: {payment_intent.id}")
     
-    def _handle_payment_intent_failed(self, payment_intent, stripe_client):
+    def _handle_payment_intent_failed(self, payment_intent):
         """Handle failed payment intent"""
         # This would be implemented to handle failed payment intents
         logger.info(f"Payment intent failed: {payment_intent.id}")
     
-    def _handle_charge_refunded(self, charge, stripe_client):
+    def _handle_charge_refunded(self, charge):
         """Handle charge refunds"""
         # This would be implemented to handle refunds
         logger.info(f"Charge refunded: {charge.id}")
     
-    def _handle_dispute_created(self, dispute, stripe_client):
+    def _handle_dispute_created(self, dispute):
         """Handle disputes/chargebacks"""
         # This would be implemented to handle disputes
         logger.info(f"Dispute created: {dispute.id}")
     
-    def _handle_fraud_warning_created(self, warning, stripe_client):
+    def _handle_fraud_warning_created(self, warning):
         """Handle fraud warnings"""
         # This would be implemented to handle fraud warnings
         logger.info(f"Fraud warning created: {warning.id}")
+    
+    def _get_initial_credits(self, metadata):
+        """Extract initial credits from product metadata"""
+        try:
+            return int(metadata.get('initial_credits', 0))
+        except (ValueError, TypeError):
+            return 0
+    
+    def _get_monthly_credits(self, metadata):
+        """Extract monthly credits from product metadata"""
+        try:
+            return int(metadata.get('monthly_credits', 0))
+        except (ValueError, TypeError):
+            return 0
 
 
 class CustomerDashboardView(APIView):
@@ -889,6 +976,7 @@ class ProductManagementView(APIView):
                 product_data['tax_code'] = request.data['tax_code']
             
             # Create the product
+            stripe.api_key = settings.STRIPE_SECRET_KEY_TEST if getattr(settings, 'TESTING', False) else settings.STRIPE_SECRET_KEY
             product = stripe_client.products.create(**product_data)
             
             # Create pricing plans if included

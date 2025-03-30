@@ -54,6 +54,7 @@ if 'apps.authentication.middleware.SupabaseJWTMiddleware' not in MIDDLEWARE:
 STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY', 'sk_test_example_key')
 STRIPE_PUBLISHABLE_KEY = os.getenv('STRIPE_PUBLISHABLE_KEY', 'pk_test_example_key')
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET_TEST', 'whsec_example_secret')
+STRIPE_SECRET_KEY_TEST = os.getenv('STRIPE_SECRET_KEY_TEST', 'sk_test_example_key')
 
 # Force test mode for safety
 if 'test' not in STRIPE_SECRET_KEY and not STRIPE_SECRET_KEY.startswith('sk_test_'):

@@ -188,7 +188,7 @@ class StripeIntegrationTestCase(TestCase):
             logger.warning(f"Error archiving product: {e}")
             
         # Clean up Django database records
-        if hasattr(self, 'customer'):
+        if hasattr(self, 'customer') and self.customer and self.customer.pk is not None:
             self.customer.delete()
         if hasattr(self, 'plan'):
             self.plan.delete()
@@ -489,7 +489,7 @@ class StripeEdgeCaseTestCase(TestCase):
             logger.warning(f"Error archiving product: {e}")
             
         # Clean up Django database records
-        if hasattr(self, 'customer'):
+        if hasattr(self, 'customer') and self.customer and self.customer.pk is not None:
             self.customer.delete()
         
         # Clear cache
@@ -607,33 +607,58 @@ class StripeEdgeCaseTestCase(TestCase):
         # Delete the customer from our database (but not from Stripe)
         self.customer.delete()
         
-        # Create webhook payload
+        # Create webhook payload that doesn't contain the full subscription object
+        # to avoid potential serialization issues
         payload = json.dumps({
             "id": "evt_test",
             "object": "event",
             "type": "customer.subscription.updated",
             "data": {
-                "object": subscription
+                "object": {
+                    "id": subscription.id,
+                    "object": "subscription",
+                    "customer": self.stripe_customer.id,
+                    "items": {
+                        "data": [
+                            {"price": {"id": self.stripe_price.id}}
+                        ]
+                    }
+                }
             }
         })
         
-        # Create valid headers with timestamp and placeholder signature
-        # (we'll bypass signature verification in the view)
-        headers = {
-            'HTTP_STRIPE_SIGNATURE': f't={int(datetime.now().timestamp())},v1=placeholder'
-        }
+        # For testing, we need to monkey patch the construct_event function to avoid signature verification
+        original_construct_event = stripe.Webhook.construct_event
         
-        # Make request to webhook endpoint
-        url = reverse('stripe:webhook')
-        response = self.client.post(
-            url, 
-            payload, 
-            content_type='application/json',
-            **headers
-        )
+        def mock_construct_event(payload, sig_header, secret):
+            return stripe.Event.construct_from(
+                json.loads(payload),
+                stripe.api_key
+            )
         
-        # Response should indicate customer not found, but not crash
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        # Patch the construct_event method
+        stripe.Webhook.construct_event = mock_construct_event
+        
+        try:
+            # Create headers with any value since we're bypassing verification
+            headers = {
+                'HTTP_STRIPE_SIGNATURE': 'bypass_verification'
+            }
+            
+            # Make request to webhook endpoint
+            url = reverse('stripe:webhook')
+            response = self.client.post(
+                url, 
+                payload, 
+                content_type='application/json',
+                **headers
+            )
+            
+            # Response should indicate customer not found, but not crash
+            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        finally:
+            # Restore the original method
+            stripe.Webhook.construct_event = original_construct_event
         
         # Clean up - delete subscription
         stripe.Subscription.delete(subscription.id)
