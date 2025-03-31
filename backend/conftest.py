@@ -3,7 +3,6 @@ import warnings
 import os
 import sys
 import django
-from django.conf import settings
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
@@ -12,8 +11,10 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
 django.setup()
 
+# Define pytest plugins at the root level as required by pytest
+pytest_plugins = []
+
 # Configure asyncio fixture scope to avoid deprecation warning
-pytest_plugins = ["asyncio"]
 pytest_asyncio_default_fixture_loop_scope = "function"
 
 # Suppress specifically the WebSocket task destroyed warnings

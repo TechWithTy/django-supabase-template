@@ -1,4 +1,22 @@
-from prometheus_client import Counter, Histogram, Gauge
+from prometheus_client import Counter, Histogram, Gauge, REGISTRY
+
+# Create a custom registry to avoid conflicts
+try:
+    # Try to unregister existing metrics if they exist
+    for metric in [
+        'api_requests_total', 'api_request_latency_seconds', 
+        'credit_usage_total', 'credit_operation_latency_seconds', 
+        'active_users', 'user_sessions_total', 
+        'api_error_rate', 'api_response_time_threshold', 
+        'anomaly_detection_triggered_total', 
+        'db_query_latency_seconds', 'db_connection_pool_size', 
+        'cache_hit_ratio', 'cache_size_bytes', 
+        'system_memory_usage_bytes', 'system_cpu_usage_percent'
+    ]:
+        if metric in REGISTRY._names_to_collectors:
+            REGISTRY.unregister(REGISTRY._names_to_collectors[metric])
+except Exception:
+    pass
 
 # API Usage Metrics
 API_REQUESTS_COUNTER = Counter(

@@ -46,8 +46,7 @@ def pytest_configure(config):
         os.environ["SKIP_INTEGRATION_TESTS"] = "true"
         print("Integration tests disabled - only running mock tests")
 
-# Define pytest plugins
-pytest_plugins = []
+# The pytest_plugins declaration has been moved to the root conftest.py file
 
 @pytest.fixture(scope="session")
 def supabase_client():
