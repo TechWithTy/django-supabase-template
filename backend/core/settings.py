@@ -97,7 +97,7 @@ WSGI_APPLICATION = "core.wsgi.application"
 LOCAL_DB_NAME = os.getenv("POSTGRES_DB", "django_db")
 LOCAL_DB_USER = os.getenv("POSTGRES_USER", "postgres")
 LOCAL_DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "test123")
-LOCAL_DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
+LOCAL_DB_HOST = os.getenv("POSTGRES_HOST", "postgres")  # Changed from 'localhost' to 'postgres'
 LOCAL_DB_PORT = os.getenv("POSTGRES_PORT", "5432")
 
 # Print local database configuration for debugging
@@ -107,6 +107,10 @@ print(f"User: {LOCAL_DB_USER}")
 print(f"Host: {LOCAL_DB_HOST}")
 print(f"Port: {LOCAL_DB_PORT}")
 print(f"Password: {'*' * len(LOCAL_DB_PASSWORD)}")  # Mask password
+
+# Get database configuration from environment
+if os.environ.get('DATABASE_URL'):
+    print(f"Using DATABASE_URL from environment: {os.environ.get('DATABASE_URL')}")
 
 # Supabase Connec
 
@@ -148,11 +152,14 @@ print("Supabase URL:", SUPABASE_URL)
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": LOCAL_DB_NAME,
-        "USER": LOCAL_DB_USER,
-        "PASSWORD": LOCAL_DB_PASSWORD,
-        "HOST": LOCAL_DB_HOST,
-        "PORT": LOCAL_DB_PORT,
+        "NAME": SUPABASE_DB_NAME,
+        "USER": SUPABASE_DB_USER,
+        "PASSWORD": SUPABASE_DB_PASSWORD,
+        "HOST": SUPABASE_DB_HOST,
+        "PORT": SUPABASE_DB_PORT,
+        "OPTIONS": {
+            "sslmode": "require",  # Supabase requires SSL
+        },
     },
     "local": {
         "ENGINE": "django.db.backends.postgresql",
@@ -175,6 +182,8 @@ DATABASES = {
     },
 }
 
+# Database Routers
+DATABASE_ROUTERS = ['core.db_router.CelerySupabaseRouter']
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [

@@ -9,15 +9,40 @@ services:
       - sqlite-data:/app/db.sqlite3
     ports:
       - "8000:8000"
+    environment:
+      - POSTGRES_HOST=postgres
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/django_db
+      - SUPABASE_DB_CONNECTION_STRING=${SUPABASE_DB_CONNECTION_STRING}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_DB=${REDIS_DB}
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:${REDIS_PORT}/${REDIS_DB}
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:${REDIS_PORT}/${REDIS_DB}
+      - REDIS_URL=${REDIS_URL:-redis://:${REDIS_PASSWORD:-redis_password}@redis:${REDIS_PORT:-6379}/${REDIS_DB:-0}}
     depends_on:
       - redis
-    env_file:
-      - .env
-    environment:
-      - REDIS_URL=${REDIS_URL:-redis://:${REDIS_PASSWORD:-redis_password}@redis:${REDIS_PORT:-6379}/${REDIS_DB:-0}}
+      - postgres
     command: >-
       sh -c "python manage.py migrate &&
              python manage.py runserver 0.0.0.0:8000"
+    networks:
+      - app-network
+
+  # PostgreSQL database
+  postgres:
+    image: postgres:14
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=django_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5432:5432"
     networks:
       - app-network
 
@@ -46,11 +71,23 @@ services:
       - ./backend:/app
     depends_on:
       - redis
+      - postgres
       - backend
     env_file:
       - .env
     environment:
-      - REDIS_URL=${REDIS_URL:-redis://:${REDIS_PASSWORD:-redis_password}@redis:${REDIS_PORT:-6379}/${REDIS_DB:-0}}
+      - POSTGRES_HOST=postgres
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/django_db
+      - SUPABASE_DB_CONNECTION_STRING=${SUPABASE_DB_CONNECTION_STRING}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_DB=${REDIS_DB}
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:${REDIS_PORT}/${REDIS_DB}
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:${REDIS_PORT}/${REDIS_DB}
     command: celery -A core worker -l info
     networks:
       - app-network
@@ -63,13 +100,24 @@ services:
     command: celery -A core beat -l info
     volumes:
       - ./backend:/app
+    environment:
+      - POSTGRES_HOST=postgres
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/django_db
+      - SUPABASE_DB_CONNECTION_STRING=${SUPABASE_DB_CONNECTION_STRING}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_DB=${REDIS_DB}
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:${REDIS_PORT}/${REDIS_DB}
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:${REDIS_PORT}/${REDIS_DB}
     depends_on:
+      - postgres
       - redis
       - backend
-    env_file:
-      - .env
-    environment:
-      - REDIS_URL=${REDIS_URL:-redis://:${REDIS_PASSWORD:-redis_password}@redis:${REDIS_PORT:-6379}/${REDIS_DB:-0}}
+      - celery
     networks:
       - app-network
 
@@ -128,6 +176,7 @@ volumes:
   prometheus-data:
   sqlite-data:
   grafana-data:
+  postgres-data:
 
 networks:
   app-network:
