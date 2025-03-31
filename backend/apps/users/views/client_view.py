@@ -1,5 +1,3 @@
-from typing import Any, Dict, List, Optional
-
 from django.conf import settings
 from rest_framework import status, permissions
 from rest_framework.decorators import api_view, permission_classes
@@ -8,17 +6,13 @@ from rest_framework.response import Response
 from django.core.cache import cache
 import hashlib
 import logging
+import re
 
 # Import the Supabase client
 from apps.supabase_home.client import supabase
 
 # Import Redis cache utilities
-from apps.caching.utils.redis_cache import (
-    cache_result,
-    get_cached_result,
-    get_or_set_cache,
-    invalidate_cache
-)
+from apps.caching.utils.redis_cache import get_cached_result
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +29,9 @@ def get_supabase_url(request: Request) -> Response:
             status=status.HTTP_200_OK,
         )
     except Exception as e:
+        logger.error(f"Failed to get Supabase URL: {str(e)}")
         return Response(
-            {"error": f"Failed to get Supabase URL: {str(e)}"},
+            {"error": "Failed to get Supabase URL"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
@@ -53,8 +48,9 @@ def get_supabase_anon_key(request: Request) -> Response:
             status=status.HTTP_200_OK,
         )
     except Exception as e:
+        logger.error(f"Failed to get Supabase anon key: {str(e)}")
         return Response(
-            {"error": f"Failed to get Supabase anon key: {str(e)}"},
+            {"error": "Failed to get Supabase anon key"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
@@ -74,21 +70,25 @@ def get_supabase_client_info(request: Request) -> Response:
             status=status.HTTP_200_OK,
         )
     except Exception as e:
+        logger.error(f"Failed to get Supabase client info: {str(e)}")
         return Response(
-            {"error": f"Failed to get Supabase client info: {str(e)}"},
+            {"error": "Failed to get Supabase client info"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
 
 # Database views
 @api_view(["GET"])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([permissions.IsAdminUser])  # Restrict to admin users only
 def execute_query(request: Request) -> Response:
     """
     Execute a database query using the Supabase client.
+    
+    SECURITY NOTE: This endpoint is restricted to admin users only and should
+    be used with caution. Consider disabling in production environments.
 
     Query parameters:
-    - query: SQL query to execute
+    - query: SQL query to execute (must be a SELECT query only)
     - params: Optional parameters for the query
     """
     query = request.query_params.get("query")
@@ -99,6 +99,14 @@ def execute_query(request: Request) -> Response:
             {"error": "Query parameter is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
+    
+    # Security check: Only allow SELECT queries
+    if not query.strip().lower().startswith('select'):
+        logger.warning(f"Attempted unsafe query execution: {query}")
+        return Response(
+            {"error": "Only SELECT queries are allowed"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
 
     try:
         # Get the database service and execute the query
@@ -106,8 +114,12 @@ def execute_query(request: Request) -> Response:
         response = db_service.execute_query(query, params)
         return Response(response, status=status.HTTP_200_OK)
     except Exception as e:
+        error_message = str(e)
+        logger.error(f"Query execution error: {error_message}")
+        
+        # Don't expose detailed error messages
         return Response(
-            {"error": f"Failed to execute query: {str(e)}"},
+            {"error": "Failed to execute query"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
@@ -124,34 +136,62 @@ def list_buckets(request: Request) -> Response:
         response = storage_service.list_buckets()
         return Response(response, status=status.HTTP_200_OK)
     except Exception as e:
+        error_message = str(e)
+        logger.error(f"Failed to list buckets: {error_message}")
         return Response(
-            {"error": f"Failed to list buckets: {str(e)}"},
+            {"error": "Failed to list storage buckets"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
 
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
-def create_bucket(request: Request) -> Response:
-    """
-    Create a new storage bucket.
-    """
+def upload_file(request: Request) -> Response:
+    """Upload a file to a storage bucket."""
     bucket_name = request.data.get("bucket_name")
-    bucket_options = request.data.get("options", {})
+    file_path = request.data.get("path")
+    file_content = request.data.get("content")
 
+    # Validate inputs
     if not bucket_name:
         return Response(
             {"error": "Bucket name is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    try:
-        storage_service = supabase.get_storage_service()
-        response = storage_service.create_bucket(bucket_name, bucket_options)
-        return Response(response, status=status.HTTP_201_CREATED)
-    except Exception as e:
+    # Validate bucket name to prevent injection attacks
+    if not re.match(r'^[a-zA-Z0-9_-]+$', bucket_name):
         return Response(
-            {"error": f"Failed to create bucket: {str(e)}"},
+            {"error": "Invalid bucket name format"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not file_path:
+        return Response(
+            {"error": "File path is required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if file_content is None:
+        return Response(
+            {"error": "File content is required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        # Upload the file
+        supabase.storage.from_(bucket_name).upload(
+            file_path, file_content, {"content-type": "application/octet-stream"}
+        )
+
+        return Response(
+            {"message": f"File '{file_path}' uploaded successfully"},
+            status=status.HTTP_201_CREATED,
+        )
+    except Exception as e:
+        logger.error("Error uploading file: %s", str(e))
+        return Response(
+            {"error": f"Failed to upload file: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
@@ -170,10 +210,18 @@ def list_objects(request: Request) -> Response:
             {"error": "Bucket name is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
+        
+    # Validate bucket name (alphanumeric, hyphens, underscores only)
+    if not re.match(r'^[a-zA-Z0-9_-]+$', bucket_name):
+        return Response(
+            {"error": "Invalid bucket name format"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     try:
         # Generate a cache key based on bucket name and path
-        cache_key = f"storage:list:{bucket_name}:{hashlib.md5(path.encode()).hexdigest()}"
+        # Use SHA-256 for secure hashing of the path
+        cache_key = f"storage:list:{bucket_name}:{hashlib.sha256(path.encode()).hexdigest()}"
         
         # Try to get data from cache first
         cached_data = get_cached_result(cache_key)
@@ -203,79 +251,9 @@ def list_objects(request: Request) -> Response:
                 {"error": f"Bucket '{bucket_name}' not found"},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        elif "permission denied" in error_message.lower() or "not authorized" in error_message.lower():
-            return Response(
-                {"error": "You don't have permission to access this bucket"},
-                status=status.HTTP_403_FORBIDDEN,
-            )
         else:
             return Response(
-                {"error": f"Failed to list objects: {error_message}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-
-@api_view(["POST"])
-@permission_classes([permissions.IsAuthenticated])
-def upload_file(request: Request) -> Response:
-    """
-    Upload a file to a bucket.
-    """
-    bucket_name = request.data.get("bucket_name")
-    file_path = request.data.get("file_path")
-    file_data = request.data.get("file_data")
-
-    if not bucket_name or not file_path or not file_data:
-        return Response(
-            {"error": "Bucket name, file path, and file data are required"},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    try:
-        storage_service = supabase.get_storage_service()
-        response = storage_service.upload_file(bucket_name, file_path, file_data)
-        
-        # Invalidate cache for this bucket's listings
-        # Extract the directory path from the file path to invalidate the correct cache entries
-        directory_path = "/".join(file_path.split("/")[:-1])
-        
-        # Generate cache key patterns for invalidation
-        # We need to invalidate both the exact directory and parent directories
-        cache_patterns = [
-            f"storage:list:{bucket_name}:*",  # All listings for this bucket
-        ]
-        
-        # Find and delete all matching cache keys
-        for pattern in cache_patterns:
-            keys_to_delete = cache.keys(pattern)
-            if keys_to_delete:
-                logger.debug(f"Invalidating {len(keys_to_delete)} cache keys after file upload to bucket: {bucket_name}")
-                cache.delete_many(keys_to_delete)
-        
-        return Response(response, status=status.HTTP_200_OK)
-    except Exception as e:
-        error_message = str(e)
-        logger.error(f"File upload error: {error_message}")
-        
-        # Handle specific error types
-        if "not found" in error_message.lower() or "does not exist" in error_message.lower():
-            return Response(
-                {"error": f"Bucket '{bucket_name}' not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-        elif "permission denied" in error_message.lower() or "not authorized" in error_message.lower():
-            return Response(
-                {"error": "You don't have permission to upload to this bucket"},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        elif "size limit" in error_message.lower() or "too large" in error_message.lower():
-            return Response(
-                {"error": "File exceeds size limit"},
-                status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            )
-        else:
-            return Response(
-                {"error": f"Failed to upload file: {error_message}"},
+                {"error": "Failed to list objects in storage bucket"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -283,82 +261,178 @@ def upload_file(request: Request) -> Response:
 @api_view(["DELETE"])
 @permission_classes([permissions.IsAuthenticated])
 def delete_file(request: Request) -> Response:
-    """
-    Delete a file from a bucket.
-    """
-    bucket_name = request.query_params.get("bucket_name")
-    file_path = request.query_params.get("file_path")
+    """Delete a file from a storage bucket."""
+    bucket_name = request.data.get("bucket_name")
+    file_path = request.data.get("path")
 
-    if not bucket_name or not file_path:
+    # Validate inputs
+    if not bucket_name:
         return Response(
-            {"error": "Bucket name and file path are required"},
+            {"error": "Bucket name is required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Validate bucket name to prevent injection attacks
+    if not re.match(r'^[a-zA-Z0-9_-]+$', bucket_name):
+        return Response(
+            {"error": "Invalid bucket name format"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not file_path:
+        return Response(
+            {"error": "File path is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
     try:
-        storage_service = supabase.get_storage_service()
-        response = storage_service.delete_file(bucket_name, file_path)
-        
-        # Invalidate cache for this bucket's listings
-        # Extract the directory path from the file path to invalidate the correct cache entries
-        directory_path = "/".join(file_path.split("/")[:-1])
-        
-        # Generate cache key patterns for invalidation
-        cache_patterns = [
-            f"storage:list:{bucket_name}:*",  # All listings for this bucket
-        ]
-        
-        # Find and delete all matching cache keys
-        for pattern in cache_patterns:
-            keys_to_delete = cache.keys(pattern)
-            if keys_to_delete:
-                logger.debug(f"Invalidating {len(keys_to_delete)} cache keys after file deletion from bucket: {bucket_name}")
-                cache.delete_many(keys_to_delete)
-        
-        return Response(response, status=status.HTTP_200_OK)
+        # Delete the file
+        supabase.storage.from_(bucket_name).remove([file_path])
+
+        return Response(
+            {"message": f"File '{file_path}' deleted successfully"},
+            status=status.HTTP_200_OK,
+        )
     except Exception as e:
-        error_message = str(e)
-        logger.error(f"File deletion error: {error_message}")
+        logger.error("Error deleting file: %s", str(e))
+        return Response(
+            {"error": f"Failed to delete file: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def create_directory(request: Request) -> Response:
+    """Create a directory inside a storage bucket."""
+    bucket_name = request.data.get("bucket_name")
+    path = request.data.get("path")
+
+    # Validate inputs
+    if not bucket_name:
+        return Response(
+            {"error": "Bucket name is required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Validate bucket name to prevent injection attacks
+    if not re.match(r'^[a-zA-Z0-9_-]+$', bucket_name):
+        return Response(
+            {"error": "Invalid bucket name format"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not path:
+        return Response(
+            {"error": "Path is required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        # Create an empty file to represent the directory
+        file_path = f"{path.rstrip('/')}/.keep"
         
-        # Handle specific error types
-        if "not found" in error_message.lower() or "does not exist" in error_message.lower():
-            return Response(
-                {"error": f"Bucket '{bucket_name}' or file '{file_path}' not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-        elif "permission denied" in error_message.lower() or "not authorized" in error_message.lower():
-            return Response(
-                {"error": "You don't have permission to delete from this bucket"},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        else:
-            return Response(
-                {"error": f"Failed to delete file: {error_message}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        # Upload an empty file to the specified path
+        supabase.storage.from_(bucket_name).upload(
+            file_path, b"", {"content-type": "text/plain"}
+        )
+
+        return Response(
+            {"message": f"Directory '{path}' created successfully"},
+            status=status.HTTP_201_CREATED,
+        )
+    except Exception as e:
+        logger.error("Error creating directory: %s", str(e))
+        return Response(
+            {"error": f"Failed to create directory: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@api_view(["DELETE"])
+@permission_classes([permissions.IsAuthenticated])
+def delete_directory(request: Request) -> Response:
+    """Delete a directory and all its contents from a storage bucket."""
+    bucket_name = request.data.get("bucket_name")
+    path = request.data.get("path")
+
+    # Validate inputs
+    if not bucket_name:
+        return Response(
+            {"error": "Bucket name is required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Validate bucket name to prevent injection attacks
+    if not re.match(r'^[a-zA-Z0-9_-]+$', bucket_name):
+        return Response(
+            {"error": "Invalid bucket name format"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not path:
+        return Response(
+            {"error": "Path is required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        # List all files in the directory
+        list_response = supabase.storage.from_(bucket_name).list(path)
+        file_paths = [f"{path}/{item['name']}" for item in list_response]
+
+        # Delete each file in the directory
+        for file_path in file_paths:
+            supabase.storage.from_(bucket_name).remove([file_path])
+
+        # Additionally, try to remove any .keep file that might represent the directory
+        try:
+            supabase.storage.from_(bucket_name).remove([f"{path.rstrip('/')}/.keep"])
+        except Exception:
+            # Ignore errors if .keep file doesn't exist
+            pass
+
+        return Response(
+            {"message": f"Directory '{path}' deleted successfully"},
+            status=status.HTTP_200_OK,
+        )
+    except Exception as e:
+        logger.error("Error deleting directory: %s", str(e))
+        return Response(
+            {"error": f"Failed to delete directory: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 # Edge Functions views
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def invoke_edge_function(request: Request) -> Response:
-    """
-    Invoke an edge function.
-    """
+    """Invoke an edge function."""
     function_name = request.data.get("function_name")
-    invoke_options = request.data.get("options", {})
+    function_params = request.data.get("params", {})
 
+    # Validate required fields
     if not function_name:
         return Response(
             {"error": "Function name is required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    # Validate function name to prevent injection
+    if not re.match(r'^[a-zA-Z0-9_-]+$', function_name):
+        return Response(
+            {"error": "Invalid function name format"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     try:
-        edge_functions_service = supabase.get_edge_functions_service()
-        response = edge_functions_service.invoke(function_name, invoke_options)
-        return Response(response, status=status.HTTP_200_OK)
+        # Invoke the edge function
+        function_result = supabase.functions.invoke(function_name, function_params)
+
+        return Response(function_result, status=status.HTTP_200_OK)
     except Exception as e:
+        logger.error("Error invoking edge function: %s", str(e))
         return Response(
             {"error": f"Failed to invoke edge function: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,

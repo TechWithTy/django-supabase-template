@@ -9,6 +9,17 @@
 🗄️You have 20 unapplied migration(s). Your project may not work properly until you apply the migrations for app(s): admin, auth, authentication, contenttypes, sessions, users.
 Run 'python manage.py migrate' to apply them.
 
+🔐Insecure MD5 hash usage in multiple files:
+redis_cache.py is using MD5 for hashing
+database_view.py is using MD5 for cache keys and token hashing
+client_view.py is using MD5 for path hashing
+Potential SQL injection vulnerability:
+In execute_query function in client_view.py
+Allowing raw SQL queries without proper parameterization
+Secrets exposure:
+Returning Supabase URL and anon key in client_view.py
+These are sensitive and should be handled more carefully🔐
+
 🪳 https://github.com/supabase/realtime/issues/1111#issuecomment-2742384131
 
 Notes:

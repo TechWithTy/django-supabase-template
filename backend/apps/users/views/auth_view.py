@@ -1,29 +1,16 @@
-from django.conf import settings
-from django.contrib.auth.models import User
-from rest_framework import viewsets, status, permissions
+from django.core.validators import validate_email
+from django.core.exceptions import ValidationError
+from rest_framework import status, permissions
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.request import Request
 from rest_framework.response import Response
 from django.core.cache import cache
 import hashlib
 import logging
+import re
 
 # Import the SupabaseAuthService directly
-from apps.supabase_home.auth import (
-    SupabaseAuthService,
-    # Import specific functions from SupabaseAuthService
-)
-
-# Import Redis cache utilities
-from apps.caching.utils.redis_cache import (
-    cache_result,
-    get_cached_result,
-    get_or_set_cache,
-    invalidate_cache
-)
-
-from ..models import UserProfile
-from ..serializers import UserSerializer, UserProfileSerializer
+from apps.supabase_home.auth import SupabaseAuthService
 
 # Import custom throttling classes
 from apps.authentication.throttling import IPRateThrottle, IPBasedUserRateThrottle
@@ -33,89 +20,139 @@ logger = logging.getLogger(__name__)
 auth_service = SupabaseAuthService()
 
 
+def validate_password_strength(password):
+    """
+    Validate that the password meets the minimum security requirements.
+    
+    Requirements:
+    - At least 8 characters long
+    - Contains at least one uppercase letter
+    - Contains at least one lowercase letter
+    - Contains at least one digit
+    - Contains at least one special character
+    
+    Returns:
+        tuple: (is_valid, error_message)
+    """
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters long"
+    
+    if not re.search(r'[A-Z]', password):
+        return False, "Password must contain at least one uppercase letter"
+    
+    if not re.search(r'[a-z]', password):
+        return False, "Password must contain at least one lowercase letter"
+    
+    if not re.search(r'\d', password):
+        return False, "Password must contain at least one digit"
+    
+    if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
+        return False, "Password must contain at least one special character"
+    
+    return True, ""
+
+
+def validate_email_format(email):
+    """
+    Validate that the email is in a correct format.
+    
+    Returns:
+        tuple: (is_valid, error_message)
+    """
+    try:
+        validate_email(email)
+        return True, ""
+    except ValidationError:
+        return False, "Invalid email format"
+
+
 @api_view(["POST"])
+@throttle_classes([IPRateThrottle])
 def signup(request: Request) -> Response:
     """
     Create a new user with email and password.
     """
     email = request.data.get("email")
     password = request.data.get("password")
-    first_name = request.data.get("first_name", "")
-    last_name = request.data.get("last_name", "")
-    
+
+    # Validate required fields
     if not email or not password:
         return Response(
             {"error": "Email and password are required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
+    # Validate email format
     try:
-        # Create user metadata with first and last name if provided
-        user_metadata = {}
-        if first_name:
-            user_metadata["first_name"] = first_name
-        if last_name:
-            user_metadata["last_name"] = last_name
-            
-        # Create the user in Supabase
-        user = auth_service.create_user(
-            email=email,
-            password=password,
-            user_metadata=user_metadata
-        )
-        
-        # Try to sign in the user to get a session, but don't fail if email confirmation is required
-        session = None
-        try:
-            session = auth_service.sign_in_with_email(
-                email=email,
-                password=password
-            )
-        except Exception as signin_error:
-            # Check if the error is due to email not being confirmed
-            error_message = str(signin_error)
-            if "email_not_confirmed" in error_message:
-                # Log a warning but continue with the signup process
-                print(f"Warning: Email not confirmed for {email}. User created but not signed in.")
-            else:
-                # For other sign-in errors, we still want to log them but not fail the signup
-                print(f"Warning: Failed to sign in after signup: {error_message}")
-        
-        # Always include both user and session in the response
-        # If session is None, it will be serialized as null in the JSON response
-        response_data = {
-            "user": user,
-            "session": session
-        }
-        
-        # Add a message if email confirmation is required
-        if session is None:
-            response_data["message"] = "User created successfully. Please confirm your email before signing in."
-        
-        return Response(response_data, status=status.HTTP_201_CREATED)
-    except Exception as e:
+        validate_email(email)
+    except ValidationError:
         return Response(
-            {"error": f"Failed to create user: {str(e)}"},
+            {"error": "Invalid email format"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Validate password strength
+    if len(password) < 8:
+        return Response(
+            {"error": "Password must be at least 8 characters long"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Check for complexity (uppercase, lowercase, numbers, special chars)
+    if not (re.search(r'[A-Z]', password) and 
+            re.search(r'[a-z]', password) and 
+            re.search(r'[0-9]', password) and 
+            re.search(r'[!@#$%^&*(),.?":{}|<>]', password)):
+        return Response(
+            {"error": "Password must contain uppercase, lowercase, numbers, and special characters"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        # Call auth service to create user
+        auth_result = auth_service.sign_up(email=email, password=password)
+        
+        # Return success response
+        sanitized_response = {
+            "message": "User created successfully",
+            "user_id": auth_result.get("user", {}).get("id", "")
+        }
+        return Response(sanitized_response, status=status.HTTP_201_CREATED)
+    except Exception as e:
+        logger.error("Signup error: %s", str(e))
+        # Don't expose detailed error information to client
+        if "already exists" in str(e).lower() or "email already registered" in str(e).lower():
+            return Response(
+                {"error": "User with this email already exists"},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(
+            {"error": "Failed to create user"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
 
 @api_view(["POST"])
+@throttle_classes([IPRateThrottle])
 def create_anonymous_user(request: Request) -> Response:
     """
     Create an anonymous user in Supabase.
     """
     try:
-        response = auth_service.create_anonymous_user()
-        return Response(response, status=status.HTTP_201_CREATED)
+        auth_service.create_anonymous_user()
+        logger.info("Anonymous user created successfully")
+        return Response(status=status.HTTP_201_CREATED)
     except Exception as e:
+        error_message = str(e)
+        logger.error(f"Anonymous user creation failed: {error_message}")
         return Response(
-            {"error": f"Failed to create anonymous user: {str(e)}"},
+            {"error": "Failed to create anonymous user"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
 
 @api_view(["POST"])
+@throttle_classes([IPRateThrottle])
 def sign_in_with_email(request: Request) -> Response:
     """
     Sign in a user with email and password.
@@ -128,43 +165,81 @@ def sign_in_with_email(request: Request) -> Response:
             {"error": "Email and password are required"},
             status=status.HTTP_400_BAD_REQUEST,
         )
+    
+    # Validate email format
+    is_valid_email, email_error = validate_email_format(email)
+    if not is_valid_email:
+        return Response(
+            {"error": email_error},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     try:
         response = auth_service.sign_in_with_email(email=email, password=password)
         
         # Extract user data from the response
-        user = {
-            'id': response.get('user', {}).get('id') if 'user' in response else None,
-            'email': email,
-            # Add other user fields as needed
-        }
+        user = None
+        if 'user' in response and response['user']:
+            user = {
+                'id': response['user'].get('id'),
+                'email': email,
+                # Add other non-sensitive user fields as needed
+            }
         
         # Format the response to match the expected structure
-        return Response(
-            {
-                "user": user,
-                "session": response,  # Use the entire response as the session data
-            },
-            status=status.HTTP_200_OK
-        )
+        result = {
+            "session": response,  # Use the entire response as the session data
+        }
+        
+        if user:
+            result["user"] = user
+            
+        # Log successful sign-in (without the password)
+        logger.info(f"User signed in: {email}")
+            
+        return Response(result, status=status.HTTP_200_OK)
     except Exception as e:
-        return Response(
-            {"error": f"Failed to sign in: {str(e)}"},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
+        error_message = str(e)
+        logger.warning(f"Sign-in failed for user {email}: {error_message}")
+        
+        # Return appropriate error messages based on the exception
+        if "invalid login credentials" in error_message or "invalid email or password" in error_message:
+            return Response(
+                {"error": "Invalid email or password"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+        elif "email not confirmed" in error_message:
+            return Response(
+                {"error": "Email not confirmed. Please check your inbox and confirm your email"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+        else:
+            return Response(
+                {"error": "Authentication failed"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 @api_view(["POST"])
+@throttle_classes([IPRateThrottle])
 def sign_in_with_id_token(request: Request) -> Response:
     """
     Sign in with an ID token from a third-party provider.
     """
-    provider = request.data.get("provider")
-    id_token = request.data.get("id_token")
+    provider = request.data.get("provider", "").strip().lower()
+    id_token = request.data.get("id_token", "").strip()
 
     if not provider or not id_token:
         return Response(
             {"error": "Provider and ID token are required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+        
+    # Validate provider
+    valid_providers = ["google", "facebook", "twitter", "github", "apple"]
+    if provider not in valid_providers:
+        return Response(
+            {"error": f"Invalid provider. Must be one of: {', '.join(valid_providers)}"},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -172,15 +247,23 @@ def sign_in_with_id_token(request: Request) -> Response:
         response = auth_service.sign_in_with_id_token(
             provider=provider, id_token=id_token
         )
+        
+        # Log successful OAuth sign-in
+        logger.info(f"User signed in via {provider} OAuth")
+        
         return Response(response, status=status.HTTP_200_OK)
     except Exception as e:
+        error_message = str(e)
+        logger.error(f"OAuth sign-in failed with {provider}: {error_message}")
+        
         return Response(
-            {"error": f"Failed to sign in with ID token: {str(e)}"},
+            {"error": "Failed to authenticate with provided token"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
 
 @api_view(["POST"])
+@throttle_classes([IPRateThrottle])
 def sign_in_with_otp(request: Request) -> Response:
     """
     Sign in with a one-time password (OTP) sent to email.
@@ -191,14 +274,33 @@ def sign_in_with_otp(request: Request) -> Response:
         return Response(
             {"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST
         )
+        
+    # Validate email format
+    is_valid_email, email_error = validate_email_format(email)
+    if not is_valid_email:
+        return Response(
+            {"error": email_error},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     try:
-        response = auth_service.sign_in_with_otp(email=email)
-        return Response(response, status=status.HTTP_200_OK)
-    except Exception as e:
+        auth_service.sign_in_with_otp(email=email)
+        
+        # Log OTP email sent
+        logger.info(f"OTP email sent to: {email}")
+        
         return Response(
-            {"error": f"Failed to send OTP: {str(e)}"},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            {"message": "If your email exists in our system, a one-time login link has been sent"},
+            status=status.HTTP_200_OK
+        )
+    except Exception as e:
+        error_message = str(e)
+        logger.error(f"Failed to send OTP to {email}: {error_message}")
+        
+        # Don't expose whether the email exists or not (for privacy)
+        return Response(
+            {"message": "If your email exists in our system, a one-time login link has been sent"},
+            status=status.HTTP_200_OK
         )
 
 
@@ -218,8 +320,8 @@ def verify_otp(request: Request) -> Response:
         )
 
     try:
-        response = auth_service.verify_otp(email=email, token=token, type=type)
-        return Response(response, status=status.HTTP_200_OK)
+        auth_result = auth_service.verify_otp(email=email, token=token, type=type)
+        return Response(auth_result, status=status.HTTP_200_OK)
     except Exception as e:
         return Response(
             {"error": f"Failed to verify OTP: {str(e)}"},
@@ -320,37 +422,90 @@ def sign_out(request: Request) -> Response:
 @api_view(["POST"])
 def reset_password(request: Request) -> Response:
     """
-    Send a password reset email to the user.
+    Request a password reset email.
     """
     email = request.data.get("email")
-    redirect_url = request.data.get("redirect_url")
 
+    # Validate required fields
     if not email:
         return Response(
-            {"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST
+            {"error": "Email is required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Validate email format
+    try:
+        validate_email(email)
+    except ValidationError:
+        return Response(
+            {"error": "Invalid email format"},
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
     try:
-        response = auth_service.reset_password(email=email, redirect_url=redirect_url)
-        return Response({"message": "Password reset email sent"}, status=status.HTTP_200_OK)
+        # Call auth service to send password reset email
+        auth_service.reset_password_for_email(email)
+        
+        # For security reasons, always return success even if email doesn't exist
+        return Response(
+            {"message": "Password reset instructions sent to email if it exists"},
+            status=status.HTTP_200_OK,
+        )
     except Exception as e:
-        error_message = str(e)
-        # Check if the error is due to rate limiting
-        if "over_email_send_rate_limit" in error_message or "429" in error_message:
-            # For security reasons, don't reveal that we hit a rate limit
-            # This prevents user enumeration attacks
-            print(f"Warning: Rate limit exceeded for password reset: {error_message}")
-            return Response(
-                {"message": "If your email exists in our system, you will receive a password reset link"},
-                status=status.HTTP_200_OK
-            )
-        else:
-            # Log the error but still return a generic success message for security
-            print(f"Error in password reset: {error_message}")
-            return Response(
-                {"message": "If your email exists in our system, you will receive a password reset link"},
-                status=status.HTTP_200_OK
-            )
+        logger.error("Error sending password reset: %s", str(e))
+        # For security reasons, don't reveal if the email exists or not
+        return Response(
+            {"message": "Password reset instructions sent to email if it exists"},
+            status=status.HTTP_200_OK,
+        )
+
+
+@api_view(["POST"])
+def reset_password_with_token(request: Request) -> Response:
+    """
+    Reset a user's password using a token.
+    """
+    token = request.data.get("token")
+    new_password = request.data.get("new_password")
+
+    # Validate required fields
+    if not token or not new_password:
+        return Response(
+            {"error": "Token and new_password are required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Validate password strength
+    if len(new_password) < 8:
+        return Response(
+            {"error": "Password must be at least 8 characters long"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Check for complexity (uppercase, lowercase, numbers, special chars)
+    if not (re.search(r'[A-Z]', new_password) and 
+            re.search(r'[a-z]', new_password) and 
+            re.search(r'[0-9]', new_password) and 
+            re.search(r'[!@#$%^&*(),.?":{}|<>]', new_password)):
+        return Response(
+            {"error": "Password must contain uppercase, lowercase, numbers, and special characters"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        # Call auth service to reset password with token
+        auth_service.reset_password_with_token(token, new_password)
+        
+        return Response(
+            {"message": "Password has been reset successfully"},
+            status=status.HTTP_200_OK,
+        )
+    except Exception as e:
+        logger.error("Error resetting password: %s", str(e))
+        return Response(
+            {"error": "Failed to reset password"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 @api_view(["GET"])
@@ -678,7 +833,7 @@ def get_current_user(request: Request) -> Response:
         cache_key = f"user_info:{token_hash}"
         
         # Try to get user info from cache first
-        user_info = get_cached_result(cache_key)
+        user_info = cache.get(cache_key)
         
         if user_info is None:
             # Cache miss - get user information from the token
@@ -706,5 +861,142 @@ def get_current_user(request: Request) -> Response:
         
         return Response(
             {"error": f"Failed to retrieve user information: {error_message}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@api_view(["POST"])
+def request_change_email(request: Request) -> Response:
+    """
+    Request to change the email address of a user.
+    """
+    email = request.data.get("email")
+
+    # Validate required fields
+    if not email:
+        return Response(
+            {"error": "Email is required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Validate email format
+    try:
+        validate_email(email)
+    except ValidationError:
+        return Response(
+            {"error": "Invalid email format"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        # Call auth service to request an email change
+        auth_service.request_change_email(email)
+        
+        return Response(
+            {"message": "Email change request sent successfully"},
+            status=status.HTTP_200_OK,
+        )
+    except Exception as e:
+        logger.error("Error requesting email change: %s", str(e))
+        return Response(
+            {"error": "Failed to request email change"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@api_view(["POST"])
+def sign_in_with_password(request: Request) -> Response:
+    """
+    Sign in with email and password.
+    """
+    email = request.data.get("email")
+    password = request.data.get("password")
+
+    # Validate required fields
+    if not email or not password:
+        return Response(
+            {"error": "Email and password are required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Validate email format
+    try:
+        validate_email(email)
+    except ValidationError:
+        return Response(
+            {"error": "Invalid email format"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        # Call auth service
+        auth_result = auth_service.sign_in_with_password(email=email, password=password)
+        
+        # Return success response with auth data
+        # Be careful not to expose sensitive information here
+        return Response(auth_result, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error("Login error: %s", str(e))
+        # Don't reveal specific error details to the client for security
+        return Response(
+            {"error": "Authentication failed"},
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def change_password(request: Request) -> Response:
+    """
+    Change the password for an authenticated user.
+    """
+    current_password = request.data.get("current_password")
+    new_password = request.data.get("new_password")
+
+    # Validate required fields
+    if not current_password or not new_password:
+        return Response(
+            {"error": "Current password and new password are required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Validate password strength
+    if len(new_password) < 8:
+        return Response(
+            {"error": "Password must be at least 8 characters long"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Check for complexity (uppercase, lowercase, numbers, special chars)
+    if not (re.search(r'[A-Z]', new_password) and 
+            re.search(r'[a-z]', new_password) and 
+            re.search(r'[0-9]', new_password) and 
+            re.search(r'[!@#$%^&*(),.?":{}|<>]', new_password)):
+        return Response(
+            {"error": "Password must contain uppercase, lowercase, numbers, and special characters"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        # Get the authentication token from the request
+        auth_token = request.auth.token if hasattr(request, "auth") and hasattr(request.auth, "token") else None
+        
+        if not auth_token:
+            return Response(
+                {"error": "Authentication token is required"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+        
+        # Call auth service to change the password
+        auth_service.change_password(auth_token, current_password, new_password)
+        
+        return Response(
+            {"message": "Password changed successfully"},
+            status=status.HTTP_200_OK,
+        )
+    except Exception as e:
+        logger.error("Error changing password: %s", str(e))
+        return Response(
+            {"error": "Failed to change password"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )

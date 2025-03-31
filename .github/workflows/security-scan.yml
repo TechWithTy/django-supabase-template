@@ -2,14 +2,14 @@ name: Security Scan
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
     paths-ignore:
-      - '**.md'
-      - '_docs/**'
+      - "**.md"
+      - "_docs/**"
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, develop]
   schedule:
-    - cron: '0 0 * * 0'  # Run weekly on Sunday at midnight
+    - cron: "0 0 * * 0" # Run weekly on Sunday at midnight
   workflow_dispatch:
 
 jobs:
@@ -23,28 +23,90 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          python-version: "3.11"
+          cache: "pip"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install safety bandit
+          pip install bandit safety
           pip install -r requirements.txt
 
       - name: Run Safety Check
-        run: safety scan -r requirements.txt --output screen
+        run: |
+          echo "===== RUNNING SAFETY SECURITY SCAN ====="
+          safety check -r requirements.txt --full-report
+          # Generate a JSON report for artifact
+          safety check -r requirements.txt --json > safety-results.json
+        env:
+          SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}
         continue-on-error: true
 
       - name: Run Bandit
-        run: bandit -r backend/ -f json -o bandit-results.json
-        continue-on-error: true
+        run: |
+          # First run with human-readable output directly to console
+          echo "===== RUNNING BANDIT SECURITY SCAN ====="
+          bandit -r backend/ --exclude "**/tests/**,**/test_*.py,**/*_test.py" -f screen
+
+          # Generate a more detailed report for CI analysis
+          bandit -r backend/ -f json -o bandit-results.json
+
+          # Run a focused scan excluding test files and with explicit severity check
+          # This will only fail the pipeline for high severity issues in non-test code
+          if bandit -r backend/ \
+             --exclude "**/tests/**,**/test_*.py,**/*_test.py" \
+             --severity-level high \
+             --confidence-level medium \
+             --format screen | grep -q "Issue: \[B[0-9]\+:high\]"; then
+            echo "::error::High severity security issues found in non-test code! Please fix these issues."
+            exit 1
+          else
+            echo "No high severity issues found in application code."
+          fi
 
       - name: Upload Bandit Results
         uses: actions/upload-artifact@v4
         with:
           name: bandit-results
           path: bandit-results.json
+          
+      - name: Upload Safety Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: safety-results
+          path: safety-results.json
+
+      - name: Generate Summary
+        run: |
+          echo "## Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Bandit Code Security Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "[Download Bandit Results](../artifacts/bandit-results)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if grep -q "\"issue_severity\": \"HIGH\"" bandit-results.json; then
+            echo "⚠️ **High severity issues detected in code!** Please review the detailed reports." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No high severity issues found in application code." >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Safety Dependency Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "[Download Safety Results](../artifacts/safety-results)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f safety-results.json ]; then
+            VULN_COUNT=$(grep -o '"vulnerability"' safety-results.json | wc -l)
+            if [ "$VULN_COUNT" -gt 0 ]; then
+              echo "⚠️ **$VULN_COUNT vulnerabilities detected in dependencies!** Please review the detailed report." >> $GITHUB_STEP_SUMMARY
+            else
+              echo "✅ No vulnerabilities found in dependencies." >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "⚠️ Safety report file not found." >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Note:** The Safety scan requires an API key to be set as a repository secret named 'SAFETY_API_KEY'." >> $GITHUB_STEP_SUMMARY
+          echo "Get your API key from https://docs.safetycli.com/api-key" >> $GITHUB_STEP_SUMMARY
 
   dependency-check:
     name: OWASP Dependency Check
@@ -56,25 +118,37 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          python-version: "3.11"
+          cache: "pip"
 
       - name: Run OWASP Dependency-Check
         uses: dependency-check/Dependency-Check_Action@main
         with:
-          project: 'django-supabase-template'
-          path: '.'
-          format: 'HTML'
-          out: 'reports'
+          project: "django-supabase-template"
+          path: "."
+          format: "HTML"
+          out: "reports"
           args: >
             --enableExperimental
             --scan requirements.txt
 
-      - name: Upload Dependency Check Report
+      - name: Upload OWASP Dependency Check Results
         uses: actions/upload-artifact@v4
         with:
           name: dependency-check-report
-          path: reports/
+          path: reports/dependency-check-report.html
+          
+      - name: Check for Critical Vulnerabilities
+        run: |
+          if grep -q "CVSS Score: [8-9]\|CVSS Score: 10" reports/dependency-check-report.html; then
+            echo "::warning::Critical vulnerabilities found in dependencies!"
+            echo "Critical vulnerabilities with CVSS score >= 8.0 found in dependencies!" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Add to summary
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### OWASP Dependency Check Results" >> $GITHUB_STEP_SUMMARY
+          echo "[Download OWASP Dependency Check Report](../artifacts/dependency-check-report)" >> $GITHUB_STEP_SUMMARY
 
   jwt-security:
     name: JWT Security Analysis
@@ -86,8 +160,8 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          python-version: "3.11"
+          cache: "pip"
 
       - name: Install dependencies
         run: |
@@ -109,8 +183,8 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          python-version: "3.11"
+          cache: "pip"
 
       - name: Install dependencies
         run: |
@@ -121,10 +195,10 @@ jobs:
         run: |
           # Check for unprotected Redis URLs
           grep -r "REDIS_URL\|REDIS_HOST" backend/ --include="*.py" | grep -v "os\\.getenv\|environ" || echo "All Redis connections use environment variables"
-          
+
           # Check for missing SSL/TLS in production Redis connections
           grep -r "StrictRedis\|Redis(" backend/ --include="*.py" | grep -E "ssl=True|ssl_cert_reqs" || echo "SSL verification checks needed for Redis in production"
-          
+
           # Check for weak Redis password patterns
           grep -r "REDIS_PASSWORD" backend/ --include="*.py" | grep -E "os\\.getenv\|environ" || echo "Redis passwords should be retrieved from environment variables"
 

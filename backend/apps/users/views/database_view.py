@@ -1,6 +1,3 @@
-from typing import Any, Dict, List, Optional
-
-from django.conf import settings
 from rest_framework import status, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.request import Request
@@ -13,12 +10,7 @@ import logging
 from apps.supabase_home.database import SupabaseDatabaseService
 
 # Import Redis cache utilities
-from apps.caching.utils.redis_cache import (
-    cache_result,
-    get_cached_result,
-    get_or_set_cache,
-    invalidate_cache
-)
+from apps.caching.utils.redis_cache import get_cached_result
 
 # Initialize the database service
 db_service = SupabaseDatabaseService()
@@ -93,37 +85,37 @@ def fetch_data(request: Request) -> Response:
         # Generate a cache key based on the query parameters
         # Include all query parameters in the cache key to ensure uniqueness
         cache_key_parts = [
-            f"table:{table}",
-            f"select:{select}",
-            f"order:{order or 'none'}",
-            f"limit:{limit or 'none'}",
-            f"offset:{offset or 'none'}",
+            "table:" + table,
+            "select:" + select,
+            "order:" + (order or 'none'),
+            "limit:" + (str(limit) if limit else 'none'),
+            "offset:" + (str(offset) if offset else 'none'),
         ]
         
         # Add filters to cache key
         for key, value in sorted(filters.items()):
-            cache_key_parts.append(f"{key}:{value}")
+            cache_key_parts.append(key + ":" + value)
             
         # Add user-specific part to the cache key if authenticated
         # This ensures users only see their own cached data
         if auth_token:
             # Use a hash of the token for security
-            token_hash = hashlib.md5(auth_token.encode()).hexdigest()
-            cache_key_parts.append(f"user:{token_hash}")
+            token_hash = hashlib.sha256(auth_token.encode()).hexdigest()
+            cache_key_parts.append("user:" + token_hash)
             
         # Join all parts and hash the result to keep the key length manageable
         cache_key_string = "|".join(cache_key_parts)
-        cache_key = f"db_query:{hashlib.md5(cache_key_string.encode()).hexdigest()}"
+        cache_key = "db_query:" + hashlib.sha256(cache_key_string.encode()).hexdigest()
         
         # Try to get data from cache first
         cached_data = get_cached_result(cache_key)
         
         if cached_data is not None:
-            logger.debug(f"Cache hit for database query: {table}")
+            logger.debug("Cache hit for database query: " + table)
             return Response(cached_data, status=status.HTTP_200_OK)
             
         # Cache miss - fetch data from the database
-        logger.debug(f"Cache miss for database query: {table}")
+        logger.debug("Cache miss for database query: " + table)
         response = db_service.fetch_data(
             table=table,
             auth_token=auth_token,
@@ -158,25 +150,12 @@ def fetch_data(request: Request) -> Response:
         
         return Response(response, status=status.HTTP_200_OK)
     except Exception as e:
-        error_message = str(e)
-        logger.error(f"Database query error: {error_message}")
-        
-        # Handle specific error types with appropriate status codes
-        if "permission denied" in error_message.lower() or "not authorized" in error_message.lower():
-            return Response(
-                {"error": "You don't have permission to access this data"},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        elif "not found" in error_message.lower() or "does not exist" in error_message.lower():
-            return Response(
-                {"error": f"Table '{table}' not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-        else:
-            return Response(
-                {"error": f"Failed to fetch data: {error_message}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        # Log and return the error
+        logger.error("Error fetching data: " + str(e))
+        return Response(
+            {"error": "Failed to fetch data: " + str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 @api_view(["POST"])
@@ -220,7 +199,7 @@ def insert_data(request: Request) -> Response:
         
         # Invalidate cache for this table
         # This ensures that subsequent fetch_data calls will get fresh data
-        cache_pattern = f"db_query:*"
+        cache_pattern = "db_query:*"
         keys_to_delete = []
         
         # Find all cache keys that might contain data for this table
@@ -232,35 +211,17 @@ def insert_data(request: Request) -> Response:
         
         # Delete all matching cache keys
         if keys_to_delete:
-            logger.debug(f"Invalidating {len(keys_to_delete)} cache keys for table: {table}")
+            logger.debug("Invalidating " + str(len(keys_to_delete)) + " cache keys for table: " + table)
             cache.delete_many(keys_to_delete)
         
         return Response(response, status=status.HTTP_201_CREATED)
     except Exception as e:
-        error_message = str(e)
-        logger.error(f"Database insert error: {error_message}")
-        
-        # Handle specific error types
-        if "permission denied" in error_message.lower() or "not authorized" in error_message.lower():
-            return Response(
-                {"error": "You don't have permission to insert data into this table"},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        elif "not found" in error_message.lower() or "does not exist" in error_message.lower():
-            return Response(
-                {"error": f"Table '{table}' not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-        elif "duplicate key" in error_message.lower() or "unique constraint" in error_message.lower():
-            return Response(
-                {"error": "This record already exists (duplicate key violation)"},
-                status=status.HTTP_409_CONFLICT,
-            )
-        else:
-            return Response(
-                {"error": f"Failed to insert data: {error_message}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        # Log and return the error
+        logger.error("Error storing data: " + str(e))
+        return Response(
+            {"error": "Failed to store data: " + str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 @api_view(["POST"])
@@ -314,7 +275,7 @@ def update_data(request: Request) -> Response:
         # Invalidate cache for this table
         # We need to be more aggressive with cache invalidation on updates
         # since we don't know exactly which records were affected
-        cache_pattern = f"db_query:*"
+        cache_pattern = "db_query:*"
         keys_to_delete = []
         
         # Find all cache keys that might contain data for this table
@@ -323,30 +284,17 @@ def update_data(request: Request) -> Response:
         
         # Delete all matching cache keys
         if keys_to_delete:
-            logger.debug(f"Invalidating {len(keys_to_delete)} cache keys after update to table: {table}")
+            logger.debug("Invalidating " + str(len(keys_to_delete)) + " cache keys after update to table: " + table)
             cache.delete_many(keys_to_delete)
         
         return Response(response, status=status.HTTP_200_OK)
     except Exception as e:
-        error_message = str(e)
-        logger.error(f"Database update error: {error_message}")
-        
-        # Handle specific error types
-        if "permission denied" in error_message.lower() or "not authorized" in error_message.lower():
-            return Response(
-                {"error": "You don't have permission to update data in this table"},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        elif "not found" in error_message.lower() or "does not exist" in error_message.lower():
-            return Response(
-                {"error": f"Table '{table}' not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-        else:
-            return Response(
-                {"error": f"Failed to update data: {error_message}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        # Log and return the error
+        logger.error("Error executing query: " + str(e))
+        return Response(
+            {"error": "Failed to execute query: " + str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 @api_view(["POST"])
@@ -386,7 +334,7 @@ def upsert_data(request: Request) -> Response:
         return Response(response, status=status.HTTP_200_OK)
     except Exception as e:
         return Response(
-            {"error": f"Failed to upsert data: {str(e)}"},
+            {"error": "Failed to upsert data: " + str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
@@ -430,7 +378,7 @@ def delete_data(request: Request) -> Response:
         
         # Invalidate cache for this table
         # For deletes, we need to invalidate all cache entries that might contain the deleted data
-        cache_pattern = f"db_query:*"
+        cache_pattern = "db_query:*"
         keys_to_delete = []
         
         # Find all cache keys that might contain data for this table
@@ -439,13 +387,13 @@ def delete_data(request: Request) -> Response:
         
         # Delete all matching cache keys
         if keys_to_delete:
-            logger.debug(f"Invalidating {len(keys_to_delete)} cache keys after delete from table: {table}")
+            logger.debug("Invalidating " + str(len(keys_to_delete)) + " cache keys after delete from table: " + table)
             cache.delete_many(keys_to_delete)
         
         return Response(response, status=status.HTTP_200_OK)
     except Exception as e:
         error_message = str(e)
-        logger.error(f"Database delete error: {error_message}")
+        logger.error("Database delete error: " + error_message)
         
         # Handle specific error types
         if "permission denied" in error_message.lower() or "not authorized" in error_message.lower():
@@ -455,7 +403,7 @@ def delete_data(request: Request) -> Response:
             )
         elif "not found" in error_message.lower() or "does not exist" in error_message.lower():
             return Response(
-                {"error": f"Table '{table}' not found"},
+                {"error": "Table '" + table + "' or record not found"},
                 status=status.HTTP_404_NOT_FOUND,
             )
         elif "foreign key constraint" in error_message.lower():
@@ -465,7 +413,7 @@ def delete_data(request: Request) -> Response:
             )
         else:
             return Response(
-                {"error": f"Failed to delete data: {error_message}"},
+                {"error": "Failed to delete data: " + error_message},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -503,6 +451,6 @@ def call_function(request: Request) -> Response:
         return Response(response, status=status.HTTP_200_OK)
     except Exception as e:
         return Response(
-            {"error": f"Failed to call function: {str(e)}"},
+            {"error": "Failed to call function: " + str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )

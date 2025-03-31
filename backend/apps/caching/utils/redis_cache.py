@@ -90,12 +90,12 @@ def cache_result(timeout: Optional[int] = None, key_prefix: str = ""):
             
             # Add args and kwargs to the key
             if args:
-                key_parts.append(hashlib.md5(str(args).encode()).hexdigest())
+                key_parts.append(hashlib.sha256(str(args).encode()).hexdigest())
             
             if kwargs:
                 # Sort kwargs by key for consistent cache keys
                 sorted_kwargs = json.dumps(kwargs, sort_keys=True)
-                key_parts.append(hashlib.md5(sorted_kwargs.encode()).hexdigest())
+                key_parts.append(hashlib.sha256(sorted_kwargs.encode()).hexdigest())
             
             cache_key = ":".join(key_parts)
             
