@@ -1,4 +1,4 @@
-from typing import Any, Callable
+from typing import Callable
 
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse, JsonResponse
@@ -74,28 +74,37 @@ class SupabaseJWTMiddleware:
             request.supabase_claims = payload.get('claims', {})
             request.supabase_roles = payload.get('roles', [])
             
+            # Check if user is disabled - CVE-2024-22513 mitigation
+            user_status = payload.get('app_metadata', {}).get('status')
+            if user_status == 'disabled':
+                logger.warning("Attempt to access by disabled user " + request.supabase_user)
+                return JsonResponse(
+                    {"error": "Account is disabled"},
+                    status=403
+                )
+            
             # Log successful authentication
-            logger.info(f"User {request.supabase_user} authenticated successfully")
+            logger.info("User " + request.supabase_user + " authenticated successfully")
             
             # Continue to the view
             return self.get_response(request)
             
         except ExpiredSignatureError:
-            logger.warning(f"Expired JWT token received")
+            logger.warning("Expired JWT token received")
             return JsonResponse(
                 {"error": "Token expired"},
                 status=401
             )
             
         except InvalidTokenError as e:
-            logger.warning(f"Invalid JWT token: {str(e)}")
+            logger.warning("Invalid JWT token: " + str(e))
             return JsonResponse(
                 {"error": "Invalid authentication token"},
                 status=401
             )
             
         except Exception as e:
-            logger.error(f"JWT validation error: {str(e)}")
+            logger.error("JWT validation error: " + str(e))
             return JsonResponse(
                 {"error": "Authentication error"},
                 status=401
