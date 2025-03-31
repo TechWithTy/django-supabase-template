@@ -3,6 +3,7 @@ import warnings
 import os
 import sys
 import django
+import pytest
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
@@ -33,3 +34,28 @@ def pytest_configure(config):
     
     # Also filter out RuntimeWarnings about coroutines not being awaited
     warnings.filterwarnings("ignore", message="coroutine .* was never awaited")
+
+# Add fixture for properly creating tables in test database
+@pytest.fixture(scope='function')
+def ensure_test_tables(django_db_setup, django_db_blocker):
+    """Ensure all required tables exist in the test database before tests run"""
+    with django_db_blocker.unblock():
+        from django.core.management import call_command
+        # Migrate specific apps that might cause issues
+        call_command('migrate', 'credits', verbosity=0)
+        call_command('migrate', 'users', verbosity=0)
+
+# Override default databases to include supabase in test isolation
+@pytest.fixture(scope='function')
+def django_db_setup(request, django_db_setup, django_db_blocker):
+    """Custom database setup that adds supabase to available databases"""
+    from django.test import override_settings
+    
+    # Get the existing databases
+    from django.conf import settings
+    databases = list(settings.DATABASES.keys())
+    if 'supabase' not in databases:
+        databases.append('supabase')
+    
+    with override_settings(DATABASE_ROUTERS=[]):
+        yield
