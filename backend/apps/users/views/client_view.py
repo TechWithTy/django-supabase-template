@@ -146,6 +146,47 @@ def list_buckets(request: Request) -> Response:
 
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
+def create_bucket(request: Request) -> Response:
+    """Create a new storage bucket."""
+    bucket_id = request.data.get("bucket_id")
+    public = request.data.get("public", False)
+    file_size_limit = request.data.get("file_size_limit")
+    allowed_mime_types = request.data.get("allowed_mime_types")
+
+    # Validate inputs
+    if not bucket_id:
+        return Response(
+            {"error": "Bucket ID is required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Validate bucket name to prevent injection attacks
+    if not re.match(r'^[a-zA-Z0-9_-]+$', bucket_id):
+        return Response(
+            {"error": "Invalid bucket ID format"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        storage_service = supabase.get_storage_service()
+        response = storage_service.create_bucket(
+            bucket_id=bucket_id,
+            public=public,
+            file_size_limit=file_size_limit,
+            allowed_mime_types=allowed_mime_types,
+        )
+        return Response(response, status=status.HTTP_201_CREATED)
+    except Exception as e:
+        error_message = str(e)
+        logger.error(f"Failed to create bucket: {error_message}")
+        return Response(
+            {"error": f"Failed to create storage bucket: {error_message}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
 def upload_file(request: Request) -> Response:
     """Upload a file to a storage bucket."""
     bucket_name = request.data.get("bucket_name")

@@ -853,7 +853,11 @@ def get_current_user(request: Request) -> Response:
         # Log the error for debugging
         logger.error(f"Error retrieving current user: {error_message}")
         
-        if "token is invalid" in error_message.lower() or "token has expired" in error_message.lower():
+        # Check for authentication-related errors and return 401
+        if ("token is invalid" in error_message.lower() or 
+            "token has expired" in error_message.lower() or
+            "session_not_found" in error_message.lower() or
+            "session from session_id" in error_message.lower()):
             return Response(
                 {"error": "Authentication token is invalid or has expired"},
                 status=status.HTTP_401_UNAUTHORIZED,

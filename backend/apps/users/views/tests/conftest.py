@@ -108,26 +108,54 @@ def test_user_credentials():
     pytest.skip("No valid test user credentials available")
     return None
 
-@pytest.fixture(scope="session")
-def authenticated_client(test_user_credentials):
-    """API client authenticated with a real Supabase JWT token"""
+@pytest.fixture(scope="function")
+def refresh_test_user(test_user_credentials):
+    """Refresh the test user's authentication token before each test"""
+    auth_service = SupabaseAuthService()
+    try:
+        # Use the refresh token to get a new access token
+        if test_user_credentials and test_user_credentials.get("refresh_token"):
+            refresh_result = auth_service.refresh_session(test_user_credentials["refresh_token"])
+            
+            # Update the credentials with the new tokens
+            test_user_credentials["auth_token"] = refresh_result.get("access_token")
+            test_user_credentials["refresh_token"] = refresh_result.get("refresh_token")
+            
+            return test_user_credentials
+    except Exception as e:
+        print(f"Warning: Failed to refresh token: {str(e)}")
+        
+    # If refresh failed, try to log in again
+    try:
+        if test_user_credentials and test_user_credentials.get("email") and test_user_credentials.get("password"):
+            signin_result = auth_service.sign_in_with_email(
+                email=test_user_credentials["email"],
+                password=test_user_credentials["password"]
+            )
+            
+            # Update credentials with fresh tokens
+            test_user_credentials["auth_token"] = signin_result.get("access_token")
+            test_user_credentials["refresh_token"] = signin_result.get("refresh_token")
+            
+            return test_user_credentials
+    except Exception as e:
+        print(f"Warning: Failed to sign in again: {str(e)}")
+    
+    return test_user_credentials
+
+@pytest.fixture(scope="function")
+def authenticated_client(refresh_test_user):
+    """API client authenticated with a fresh Supabase JWT token (function scoped for fresh tokens)"""
     client = APIClient()
     
     # Check if we have valid credentials
-    if not test_user_credentials or not test_user_credentials.get("auth_token"):
+    if not refresh_test_user or not refresh_test_user.get("auth_token"):
         pytest.skip("No authentication token available")
         return None
         
     # Set the JWT token in the Authorization header
-    client.credentials(HTTP_AUTHORIZATION=f'Bearer {test_user_credentials["auth_token"]}')
-    
+    client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh_test_user["auth_token"]}')    
     return client
-
-# Use django_db_setup fixture to ensure database is set up for session fixtures
-@pytest.fixture(scope="session")
-def django_db_setup(django_db_setup, django_db_blocker):
-    """Set up the database for session-scoped fixtures"""
-    pass
 
 @pytest.fixture(scope="session")
 def test_django_user(test_user_credentials, django_db_setup, django_db_blocker):
@@ -315,3 +343,37 @@ def test_table(test_user_credentials, supabase_services, django_db_blocker):
         print(f"Warning: Failed to create test table: {str(e)}")
         pytest.skip(f"Could not create test table: {str(e)}")
         yield None
+
+@pytest.fixture(scope="session")
+def monkeypatch_session(request):
+    """Create a session-scoped monkeypatch fixture"""
+    from _pytest.monkeypatch import MonkeyPatch
+    mpatch = MonkeyPatch()
+    yield mpatch
+    mpatch.undo()
+
+@pytest.fixture(scope="session")
+def supabase_auth_mock(monkeypatch_session):
+    """Mock the Supabase auth service to bypass real authentication"""
+    def mock_verify_jwt(self, token):
+        # Return a valid user payload that matches our test user
+        return {
+            "sub": "test-user-id",
+            "email": "test@example.com",
+            "exp": int(time.time()) + 3600,  # Valid for 1 hour
+            "aud": "authenticated",
+            "app_metadata": {},
+            "user_metadata": {"name": "Test User"},
+            "role": "authenticated"
+        }
+    
+    # Use monkeypatch_session to mock the auth service verify_jwt method
+    from apps.authentication.authentication import SupabaseJWTAuthentication
+    monkeypatch_session.setattr(SupabaseJWTAuthentication, "verify_jwt", mock_verify_jwt)
+    
+    return True
+
+@pytest.fixture(scope="session")
+def django_db_setup(django_db_setup, django_db_blocker):
+    """Set up the database for session-scoped fixtures"""
+    pass
