@@ -46,7 +46,7 @@ def ensure_test_tables(django_db_setup, django_db_blocker):
         call_command('migrate', 'users', verbosity=0)
 
 # Override default databases to include supabase in test isolation
-@pytest.fixture(scope='function')
+@pytest.fixture(scope='class')
 def django_db_setup(request, django_db_setup, django_db_blocker):
     """Custom database setup that adds supabase to available databases"""
     from django.test import override_settings

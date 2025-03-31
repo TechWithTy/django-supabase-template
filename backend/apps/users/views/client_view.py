@@ -225,6 +225,12 @@ def upload_file(request: Request) -> Response:
             file_path, file_content, {"content-type": "application/octet-stream"}
         )
 
+        # Invalidate cache entries related to this bucket
+        cache_pattern = f"storage:list:{bucket_name}:*"
+        cache_keys = cache.keys(cache_pattern)
+        if cache_keys:
+            cache.delete_many(cache_keys)
+
         return Response(
             {"message": f"File '{file_path}' uploaded successfully"},
             status=status.HTTP_201_CREATED,
@@ -329,6 +335,12 @@ def delete_file(request: Request) -> Response:
     try:
         # Delete the file
         supabase.storage.from_(bucket_name).remove([file_path])
+
+        # Invalidate cache entries related to this bucket
+        cache_pattern = f"storage:list:{bucket_name}:*"
+        cache_keys = cache.keys(cache_pattern)
+        if cache_keys:
+            cache.delete_many(cache_keys)
 
         return Response(
             {"message": f"File '{file_path}' deleted successfully"},
