@@ -146,21 +146,24 @@ print("Supabase URL:", SUPABASE_URL)
 
 # Database configurations
 DATABASES = {
-    "local": {
-        "ENGINE": "dj_db_conn_pool.backends.postgresql",
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
         "NAME": LOCAL_DB_NAME,
         "USER": LOCAL_DB_USER,
         "PASSWORD": LOCAL_DB_PASSWORD,
         "HOST": LOCAL_DB_HOST,
         "PORT": LOCAL_DB_PORT,
-        "POOL_OPTIONS": {
-            "POOL_SIZE": 20,
-            "MAX_OVERFLOW": 10,
-            "RECYCLE": 300,  # Connection recycle time in seconds
-        },
+    },
+    "local": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": LOCAL_DB_NAME,
+        "USER": LOCAL_DB_USER,
+        "PASSWORD": LOCAL_DB_PASSWORD,
+        "HOST": LOCAL_DB_HOST,
+        "PORT": LOCAL_DB_PORT,
     },
     "supabase": {
-        "ENGINE": "dj_db_conn_pool.backends.postgresql",
+        "ENGINE": "django.db.backends.postgresql",
         "NAME": SUPABASE_DB_NAME,
         "USER": SUPABASE_DB_USER,
         "PASSWORD": SUPABASE_DB_PASSWORD,
@@ -168,11 +171,6 @@ DATABASES = {
         "PORT": SUPABASE_DB_PORT,
         "OPTIONS": {
             "sslmode": "require",  # Supabase requires SSL
-        },
-        "POOL_OPTIONS": {
-            "POOL_SIZE": 20,
-            "MAX_OVERFLOW": 10,
-            "RECYCLE": 300,  # Connection recycle time in seconds
         },
     },
 }
