@@ -59,7 +59,7 @@ jobs:
         fi
         # Always run type checking and linting with JSON output where possible
         flake8 --format=json backend/ --config=backend/.flake8 > linting_reports/flake8_report.json || true
-        mypy backend/ --ignore-missing-imports --json-report linting_reports/mypy_report.json || true
+        mypy backend/ --ignore-missing-imports || true
     
   test:
     name: Run Tests
