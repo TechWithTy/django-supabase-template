@@ -3,7 +3,6 @@ from django.urls import reverse
 from rest_framework.test import APIClient
 from rest_framework import status
 import json
-import os
 import uuid
 from apps.users.models import UserProfile
 from apps.credits.models import CreditTransaction

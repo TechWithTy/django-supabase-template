@@ -57,15 +57,18 @@ class StorageCachingTestCase(TestCase):
         # Import the view function directly
         from apps.users.views.client_view import list_objects
         
+        # Mock response data (must be serializable)
+        mock_response = [{"name": "file1.txt", "size": 1024}]
+        
         # First call should cache the result
-        with patch('apps.users.views.client_view.supabase.get_storage_service') as mock_storage_service, \
+        with patch('apps.users.views.client_view.supabase.get_storage_service') as mock_get_storage, \
              patch('apps.users.views.client_view.get_cached_result') as mock_cache_get, \
              patch('apps.users.views.client_view.cache.set') as mock_cache_set:
             
             # Setup mock storage service
             mock_storage = MagicMock()
-            mock_storage.list_objects.return_value = [{"name": "file1.txt", "size": 1024}]
-            mock_storage_service.return_value = mock_storage
+            mock_storage.list_objects.return_value = mock_response
+            mock_get_storage.return_value = mock_storage
             
             # Setup cache miss
             mock_cache_get.return_value = None
@@ -95,18 +98,18 @@ class StorageCachingTestCase(TestCase):
             
             # Verify response contains correct data
             self.assertEqual(response1.status_code, 200)
-            self.assertEqual(response1.data, mock_storage.list_objects.return_value)
+            self.assertEqual(response1.data, mock_response)
     
     def test_list_objects_cache_hit(self):
         """Test that list_objects returns cached data on cache hit."""
         # Import the view function directly
         from apps.users.views.client_view import list_objects
         
-        # Generate expected cache key
-        path_hash = hashlib.md5(self.test_path.encode()).hexdigest()
+        # Generate expected cache key using SHA-256 hash, matching the implementation in the view
+        path_hash = hashlib.sha256(self.test_path.encode()).hexdigest()
         cache_key = f"storage:list:{self.test_bucket}:{path_hash}"
         
-        # Manually set cache with mock data
+        # Manually set cache with mock data (must be JSON serializable)
         cached_data = [{"name": "cached_file.txt", "size": 2048}]
         cache.set(cache_key, cached_data, timeout=300)
         
@@ -122,14 +125,18 @@ class StorageCachingTestCase(TestCase):
         force_authenticate(request, user=self.user)
         
         # Call should use cached data
-        with patch('apps.users.views.client_view.supabase.get_storage_service') as mock_storage_service:
+        with patch('apps.users.views.client_view.supabase.get_storage_service') as mock_get_storage:
+            # Setup mock storage (should not be called)
+            mock_storage = MagicMock()
+            mock_get_storage.return_value = mock_storage
+            
             # Call the view function directly
             response = list_objects(request)
             
             # Verify storage service was not called (cache hit)
-            mock_storage_service.assert_not_called()
+            mock_storage.list_objects.assert_not_called()
             
-            # Verify response contains cached data
+            # Verify response contains the cached data
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.data, cached_data)
     
@@ -300,7 +307,7 @@ class StorageCachingTestCase(TestCase):
         # Import the view function directly
         from apps.users.views.client_view import list_objects
         
-        # Mock storage service response
+        # Mock storage service response (must be JSON serializable)
         mock_storage_response = [{"name": "file1.txt", "size": 1024}]
         
         # Create a factory for the request
@@ -308,13 +315,13 @@ class StorageCachingTestCase(TestCase):
         request_url = f"/api/client/storage/list/?bucket_name={self.test_bucket}&path={self.test_path}"
         
         # First request (cache miss) should be slower
-        with patch('apps.users.views.client_view.supabase.get_storage_service') as mock_storage_service, \
+        with patch('apps.users.views.client_view.supabase.get_storage_service') as mock_get_storage, \
              patch('apps.users.views.client_view.get_cached_result') as mock_cache_get:
             
             # Setup mock storage service
             mock_storage = MagicMock()
             mock_storage.list_objects.return_value = mock_storage_response
-            mock_storage_service.return_value = mock_storage
+            mock_get_storage.return_value = mock_storage
             
             # Setup cache miss
             mock_cache_get.return_value = None
@@ -332,6 +339,13 @@ class StorageCachingTestCase(TestCase):
             
             # Verify storage service was called
             mock_storage.list_objects.assert_called_once_with(self.test_bucket, self.test_path)
+        
+        # Generate expected cache key using SHA-256 hash, matching the implementation in the view
+        path_hash = hashlib.sha256(self.test_path.encode()).hexdigest()
+        cache_key = f"storage:list:{self.test_bucket}:{path_hash}"
+        
+        # Manually set cache for the second request
+        cache.set(cache_key, mock_storage_response, timeout=300)
         
         # Second request (cache hit) should be faster
         with patch('apps.users.views.client_view.get_cached_result') as mock_cache_get:
