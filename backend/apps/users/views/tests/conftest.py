@@ -158,7 +158,7 @@ def authenticated_client(refresh_test_user):
     return client
 
 @pytest.fixture(scope="session")
-def test_django_user(test_user_credentials, django_db_setup, django_db_blocker):
+def test_django_user(test_user_credentials, users_db_setup, django_db_blocker):
     """Create a test user in the Django database
     
     This creates a Django User model instance matching the Supabase user
@@ -374,6 +374,6 @@ def supabase_auth_mock(monkeypatch_session):
     return True
 
 @pytest.fixture(scope="session")
-def django_db_setup(django_db_setup, django_db_blocker):
+def users_db_setup(django_db_setup, django_db_blocker):
     """Set up the database for session-scoped fixtures"""
     pass
