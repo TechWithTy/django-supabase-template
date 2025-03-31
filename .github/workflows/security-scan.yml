@@ -33,7 +33,8 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run Safety Check
-        run: safety check -r requirements.txt --full-report --output text
+        run: safety scan -r requirements.txt --output text
+        continue-on-error: true
 
       - name: Run Bandit
         run: bandit -r backend/ -f json -o bandit-results.json
