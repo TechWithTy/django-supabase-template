@@ -33,7 +33,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run Safety Check
-        run: safety scan -r requirements.txt --output text
+        run: safety scan -r requirements.txt --output screen
         continue-on-error: true
 
       - name: Run Bandit
@@ -115,12 +115,18 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install redis-security-audit
+          pip install redis-py-cluster cryptography
 
       - name: Check Redis Security Configuration
         run: |
-          grep -r "REDIS_URL" backend/ --include="*.py" | grep -v "os\\.getenv" || echo "All Redis connections use environment variables"
-          grep -r "StrictRedis\\|Redis(" backend/ --include="*.py" | grep -E "ssl=True|ssl_cert_reqs" || echo "SSL verification checks needed for Redis in production"
+          # Check for unprotected Redis URLs
+          grep -r "REDIS_URL\|REDIS_HOST" backend/ --include="*.py" | grep -v "os\\.getenv\|environ" || echo "All Redis connections use environment variables"
+          
+          # Check for missing SSL/TLS in production Redis connections
+          grep -r "StrictRedis\|Redis(" backend/ --include="*.py" | grep -E "ssl=True|ssl_cert_reqs" || echo "SSL verification checks needed for Redis in production"
+          
+          # Check for weak Redis password patterns
+          grep -r "REDIS_PASSWORD" backend/ --include="*.py" | grep -E "os\\.getenv\|environ" || echo "Redis passwords should be retrieved from environment variables"
 
   notify-results:
     name: Notify Security Results
