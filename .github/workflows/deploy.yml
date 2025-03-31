@@ -17,6 +17,10 @@ on:
           - staging
           - production
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   validate:
     name: Validate Environment

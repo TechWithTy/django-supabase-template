@@ -13,6 +13,10 @@ on:
       - '_docs/**'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   lint:
     name: Code Quality Checks
@@ -58,7 +62,7 @@ jobs:
         mypy backend/ --ignore-missing-imports --json-report linting_reports/mypy_report.json || true
     
     - name: Upload linting reports
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v2
       with:
         name: linting-reports
         path: linting_reports/
