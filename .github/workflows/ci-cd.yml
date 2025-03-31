@@ -137,14 +137,21 @@ jobs:
           REDIS_URL: "redis://:${{ secrets.REDIS_PASSWORD || 'redis_default_password_for_ci' }}@localhost:${{ secrets.REDIS_PORT || '6379' }}/${{ secrets.REDIS_DB || '0' }}"
         run: |
           cd backend
-          python -m pytest --cov=. --cov-report=xml || true
+          python -m pytest --cov=. --cov-report=xml --junitxml=junit.xml -o junit_family=legacy || true
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
           file: ./backend/coverage.xml
-          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: "TechWithTy/django-supabase-template"
           fail_ci_if_error: false
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: ./backend/junit.xml
 
   build:
     name: Build Docker Image
