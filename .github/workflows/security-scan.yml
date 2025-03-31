@@ -131,6 +131,7 @@ jobs:
           args: >
             --enableExperimental
             --scan requirements.txt
+            --suppression .github/configs/dependency-check-suppressions.xml
 
       - name: Upload OWASP Dependency Check Results
         uses: actions/upload-artifact@v4
