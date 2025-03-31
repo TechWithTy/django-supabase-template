@@ -96,21 +96,21 @@ jobs:
     
     - name: Run tests
       env:
-        DJANGO_SECRET_KEY: test_secret_key
-        DJANGO_DEBUG: "True"
-        DB_ENGINE: django.db.backends.postgresql
-        DB_NAME: test_db
-        DB_USER: postgres
-        DB_PASSWORD: postgres
-        DB_HOST: localhost
-        DB_PORT: 5432
-        SUPABASE_URL: http://localhost:54321
-        SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
-        SUPABASE_SERVICE_ROLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU
-        SUPABASE_JWT_SECRET: your-super-secret-jwt-token-with-at-least-32-characters-long
-        REDIS_PASSWORD: "redis_default_password_for_ci"
-        REDIS_DB: "0"
-        REDIS_PORT: "6379"
+        DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY || 'test_secret_key' }}
+        DJANGO_DEBUG: "${{ secrets.DJANGO_DEBUG || 'True' }}"
+        DB_ENGINE: ${{ secrets.DB_ENGINE || 'django.db.backends.postgresql' }}
+        DB_NAME: ${{ secrets.DB_NAME || 'test_db' }}
+        DB_USER: ${{ secrets.DB_USER || 'postgres' }}
+        DB_PASSWORD: ${{ secrets.DB_PASSWORD || 'postgres' }}
+        DB_HOST: ${{ secrets.DB_HOST || 'localhost' }}
+        DB_PORT: ${{ secrets.DB_PORT || '5432' }}
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'http://localhost:54321' }}
+        SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0' }}
+        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU' }}
+        SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET || 'your-super-secret-jwt-token-with-at-least-32-characters-long' }}
+        REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD || 'redis_default_password_for_ci' }}
+        REDIS_DB: ${{ secrets.REDIS_DB || '0' }}
+        REDIS_PORT: ${{ secrets.REDIS_PORT || '6379' }}
         REDIS_URL: "redis://:${{ secrets.REDIS_PASSWORD || 'redis_default_password_for_ci' }}@localhost:${{ secrets.REDIS_PORT || '6379' }}/${{ secrets.REDIS_DB || '0' }}"
       run: |
         cd backend
