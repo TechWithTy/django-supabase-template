@@ -144,6 +144,67 @@ jobs:
         with:
           file: ./backend/coverage.xml
           slug: "TechWithTy/django-supabase-template"
+          flags: backend
+          fail_ci_if_error: false
+
+      - name: Run API Tests
+        env:
+          DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY || 'test_secret_key' }}
+          DJANGO_DEBUG: "${{ secrets.DJANGO_DEBUG || 'True' }}"
+          DB_ENGINE: ${{ secrets.DB_ENGINE || 'django.db.backends.postgresql' }}
+          DB_NAME: ${{ secrets.DB_NAME || 'test_db' }}
+          DB_USER: ${{ secrets.DB_USER || 'postgres' }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD || 'postgres' }}
+          DB_HOST: ${{ secrets.DB_HOST || 'localhost' }}
+          DB_PORT: ${{ secrets.DB_PORT || '5432' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'http://localhost:54321' }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0' }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU' }}
+          SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET || 'your-super-secret-jwt-token-with-at-least-32-characters-long' }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD || 'redis_default_password_for_ci' }}
+          REDIS_DB: ${{ secrets.REDIS_DB || '0' }}
+          REDIS_PORT: ${{ secrets.REDIS_PORT || '6379' }}
+          REDIS_URL: "redis://:${{ secrets.REDIS_PASSWORD || 'redis_default_password_for_ci' }}@localhost:${{ secrets.REDIS_PORT || '6379' }}/${{ secrets.REDIS_DB || '0' }}"
+        run: |
+          cd backend
+          python -m pytest api/ --cov=api --cov-report=xml:api-coverage.xml --junitxml=api-junit.xml -o junit_family=legacy || true
+
+      - name: Upload API coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./backend/api-coverage.xml
+          slug: "TechWithTy/django-supabase-template"
+          flags: api
+          fail_ci_if_error: false
+
+      - name: Run Integration Tests
+        env:
+          DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY || 'test_secret_key' }}
+          DJANGO_DEBUG: "${{ secrets.DJANGO_DEBUG || 'True' }}"
+          DB_ENGINE: ${{ secrets.DB_ENGINE || 'django.db.backends.postgresql' }}
+          DB_NAME: ${{ secrets.DB_NAME || 'test_db' }}
+          DB_USER: ${{ secrets.DB_USER || 'postgres' }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD || 'postgres' }}
+          DB_HOST: ${{ secrets.DB_HOST || 'localhost' }}
+          DB_PORT: ${{ secrets.DB_PORT || '5432' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'http://localhost:54321' }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0' }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU' }}
+          SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET || 'your-super-secret-jwt-token-with-at-least-32-characters-long' }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD || 'redis_default_password_for_ci' }}
+          REDIS_DB: ${{ secrets.REDIS_DB || '0' }}
+          REDIS_PORT: ${{ secrets.REDIS_PORT || '6379' }}
+          REDIS_URL: "redis://:${{ secrets.REDIS_PASSWORD || 'redis_default_password_for_ci' }}@localhost:${{ secrets.REDIS_PORT || '6379' }}/${{ secrets.REDIS_DB || '0' }}"
+        run: |
+          cd backend
+          python -m pytest tests/test_integration.py --cov=. --cov-report=xml:integration-coverage.xml --junitxml=integration-junit.xml -o junit_family=legacy || true
+
+      - name: Upload Integration coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./backend/integration-coverage.xml
+          slug: "TechWithTy/django-supabase-template"
+          flags: integration
           fail_ci_if_error: false
 
       - name: Upload test results to Codecov
@@ -151,7 +212,7 @@ jobs:
         uses: codecov/test-results-action@v1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          file: ./backend/junit.xml
+          file: ./backend/junit.xml,./backend/api-junit.xml,./backend/integration-junit.xml
 
   build:
     name: Build Docker Image
@@ -191,6 +252,15 @@ jobs:
             echo "cache_tag=staging" >> $GITHUB_OUTPUT
           fi
 
+      - name: Set repository variables
+        id: repo-vars
+        run: |
+          # Convert any uppercase characters to lowercase in the repository name
+          REPO_OWNER="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+          REPO_NAME="$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')"
+          echo "repo_owner=$REPO_OWNER" >> $GITHUB_OUTPUT
+          echo "repo_name=$REPO_NAME" >> $GITHUB_OUTPUT
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
         with:
@@ -198,8 +268,8 @@ jobs:
           file: ./docker/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:${{ steps.set-env.outputs.env }}
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ghcr.io/${{ steps.repo-vars.outputs.repo_owner }}/${{ steps.repo-vars.outputs.repo_name }}:${{ steps.set-env.outputs.env }}
+            ghcr.io/${{ steps.repo-vars.outputs.repo_owner }}/${{ steps.repo-vars.outputs.repo_name }}:${{ github.sha }}
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
           build-args: |
