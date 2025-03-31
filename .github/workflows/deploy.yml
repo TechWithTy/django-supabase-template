@@ -64,13 +64,14 @@ jobs:
       - name: Run critical path tests
         run: |
           cd backend
-          python -m pytest apps/supabase_home/tests apps/users/tests/test_auth.py -v
+          python -m pytest apps/supabase_home/tests/test_auth.py apps/users/views/tests/test_auth_views.py -v
         env:
           DJANGO_DEBUG: "true"
           DJANGO_SECRET_KEY: "test-secret-key-for-ci"
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD || 'redis_default_password_for_ci' }}
           REDIS_DB: ${{ secrets.REDIS_DB || '0' }}
           REDIS_PORT: ${{ secrets.REDIS_PORT || '6379' }}
