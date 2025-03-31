@@ -828,8 +828,8 @@ def get_current_user(request: Request) -> Response:
         token = auth_header.split(' ')[1]
         
         # Generate a cache key based on the token
-        # Use a hash for security (avoid storing tokens in cache keys)
-        token_hash = hashlib.md5(token.encode()).hexdigest()
+        # Use a secure hash (avoid storing tokens in cache keys)
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
         cache_key = f"user_info:{token_hash}"
         
         # Try to get user info from cache first

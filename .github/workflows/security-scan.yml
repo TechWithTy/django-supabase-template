@@ -35,9 +35,9 @@ jobs:
       - name: Run Safety Check
         run: |
           echo "===== RUNNING SAFETY SECURITY SCAN ====="
-          safety check -r requirements.txt --full-report
+          safety scan -r requirements.txt --full-report
           # Generate a JSON report for artifact
-          safety check -r requirements.txt --json > safety-results.json
+          safety scan -r requirements.txt --json > safety-results.json
         env:
           SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}
         continue-on-error: true

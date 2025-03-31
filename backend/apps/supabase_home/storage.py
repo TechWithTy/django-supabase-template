@@ -623,7 +623,7 @@ class SupabaseStorageService(SupabaseService):
 
         import requests
 
-        response = requests.put(signed_url, headers=headers, data=file_data)
+        response = requests.put(signed_url, headers=headers, data=file_data, timeout=30)  # Add 30-second timeout for security
         response.raise_for_status()
 
     def get_public_url(self, bucket_id: str, path: str, auth_token: Optional[str] = None, is_admin: bool = False) -> str:
