@@ -64,7 +64,7 @@ jobs:
       - name: Run critical path tests
         run: |
           cd backend
-          python -m pytest apps/supabase/tests apps/users/tests/test_auth.py -v
+          python -m pytest apps/supabase_home/tests apps/users/tests/test_auth.py -v
         env:
           DJANGO_DEBUG: "true"
           DJANGO_SECRET_KEY: "test-secret-key-for-ci"
