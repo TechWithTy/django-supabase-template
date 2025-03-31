@@ -135,18 +135,6 @@ jobs:
         run: |
           cd backend
           # Clear cache before tests to ensure proper isolation
-<<<<<<< HEAD
-          DJANGO_SETTINGS_MODULE=config.settings python -c "import django; django.setup(); from django.core.cache import cache; cache.clear()"
-          
-          # Run all backend tests and generate combined coverage
-          DJANGO_SETTINGS_MODULE=config.settings python -m pytest --cov=. --cov-report=xml:coverage.xml --junitxml=junit.xml -o junit_family=legacy
-          
-          # Run API-specific tests
-          DJANGO_SETTINGS_MODULE=config.settings python -m pytest api/ --cov=api --cov-report=xml:api-coverage.xml --junitxml=api-junit.xml -o junit_family=legacy
-          
-          # Run integration tests
-          DJANGO_SETTINGS_MODULE=config.settings python -m pytest tests/test_integration.py --cov=. --cov-report=xml:integration-coverage.xml --junitxml=integration-junit.xml -o junit_family=legacy
-=======
           python -c "import django; django.setup(); from django.core.cache import cache; cache.clear()"
           
           # Run all backend tests and generate combined coverage
@@ -157,7 +145,6 @@ jobs:
           
           # Run integration tests
           python -m pytest tests/test_integration.py --cov=. --cov-report=xml:integration-coverage.xml --junitxml=integration-junit.xml -o junit_family=legacy
->>>>>>> e98d056 (updated docker build)
           
           # Ensure all coverage files exist (create empty if needed)
           for file in coverage.xml api-coverage.xml integration-coverage.xml; do
@@ -166,12 +153,6 @@ jobs:
             fi
           done
 
-<<<<<<< HEAD
-          # Clear cache after tests to ensure clean state for next run
-          DJANGO_SETTINGS_MODULE=config.settings python -c "import django; django.setup(); from django.core.cache import cache; cache.clear()"
-          
-=======
->>>>>>> e98d056 (updated docker build)
       - name: Upload Coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
