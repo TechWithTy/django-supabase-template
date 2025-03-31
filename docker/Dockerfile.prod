@@ -1,6 +1,6 @@
 # Multi-stage build for production Django deployment
 # Stage 1: Build dependencies
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
@@ -18,23 +18,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install pipenv
-RUN pip install --no-cache-dir pipenv
+# Copy requirements file
+COPY requirements.txt /app/
 
-# Copy Pipfile and install dependencies
-COPY Pipfile Pipfile.lock* /app/
-
-# Install dependencies with dev dependencies excluded
-RUN pipenv install --system --deploy --ignore-pipfile
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Stage 2: Python wheels
-FROM builder as wheels
+FROM builder AS wheels
 
 # Copy the project files
 COPY . /app/
 
 # Generate Python wheels
-RUN pip wheel --no-cache-dir --wheel-dir /app/wheels -r <(pipenv requirements)
+RUN pip wheel --no-cache-dir --wheel-dir /app/wheels -r requirements.txt
 
 # Stage 3: Final lightweight runtime image
 FROM python:3.11-slim

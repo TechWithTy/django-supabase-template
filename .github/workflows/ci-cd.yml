@@ -34,9 +34,25 @@ jobs:
     
     - name: Run linting
       run: |
-        black --check backend/
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          # In pull requests, auto-format the code
+          black backend/
+          isort --profile black backend/
+          # Check if any files were changed
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git config --local user.email "github-actions[bot]@users.noreply.github.com"
+            git config --local user.name "github-actions[bot]"
+            git add .
+            git commit -m "Apply automatic formatting"
+            git push
+          fi
+        else
+          # In other events, just check formatting
+          black --check backend/
+          isort --check-only --profile black backend/
+        fi
+        # Always run type checking and linting
         flake8 backend/ --config=backend/.flake8
-        isort --check-only --profile black backend/
         mypy backend/ --ignore-missing-imports
 
   test:
