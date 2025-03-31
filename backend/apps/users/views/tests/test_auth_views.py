@@ -149,4 +149,5 @@ class TestAuthViews:
             assert response.data['email'] == test_user_credentials['email']
         elif response.status_code == status.HTTP_401_UNAUTHORIZED:
             # If session was invalidated (e.g., by the logout test), we expect a 401
-            assert 'error' in response.data
+            # Check for either 'error' or 'detail' in the response data (depending on authentication mechanism)
+            assert 'error' in response.data or 'detail' in response.data
