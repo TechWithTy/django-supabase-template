@@ -134,24 +134,31 @@ jobs:
           REDIS_URL: "redis://:${{ secrets.REDIS_PASSWORD || 'redis_default_password_for_ci' }}@localhost:${{ secrets.REDIS_PORT || '6379' }}/${{ secrets.REDIS_DB || '0' }}"
         run: |
           cd backend
-          # Clear cache before tests to ensure proper isolation
-          python -c "import django; django.setup(); from django.core.cache import cache; cache.clear()"
-          
+          # Create a small script to clear cache without Django settings issues
+          cat > clear_cache.py << 'EOL'
+          import os
+          os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+          import django
+          django.setup()
+          from django.core.cache import cache
+          cache.clear()
+          print("Cache cleared successfully")
+          EOL
+          python clear_cache.py
           # Run all backend tests and generate combined coverage
           python -m pytest --cov=. --cov-report=xml:coverage.xml --junitxml=junit.xml -o junit_family=legacy
-          
           # Run API-specific tests
           python -m pytest api/ --cov=api --cov-report=xml:api-coverage.xml --junitxml=api-junit.xml -o junit_family=legacy
-          
           # Run integration tests
           python -m pytest tests/test_integration.py --cov=. --cov-report=xml:integration-coverage.xml --junitxml=integration-junit.xml -o junit_family=legacy
-          
           # Ensure all coverage files exist (create empty if needed)
           for file in coverage.xml api-coverage.xml integration-coverage.xml; do
             if [ ! -f $file ]; then
               echo "<?xml version='1.0' encoding='utf-8'?><coverage version='1.0'><packages></packages></coverage>" > $file
             fi
           done
+          # Clear cache after tests to ensure clean state for future runs
+          python clear_cache.py
 
       - name: Upload Coverage to Codecov
         uses: codecov/codecov-action@v3
