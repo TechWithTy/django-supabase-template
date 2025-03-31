@@ -13,7 +13,7 @@ drizzle==2.0.1
 supabase==2.14.0
 
 # Authentication
-pyjwt<2.10.0,>=2.8.0
+pyjwt==2.10.1
 cryptography==44.0.1
 
 # Celery

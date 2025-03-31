@@ -38,6 +38,11 @@ jobs:
           safety check -r requirements.txt --full-report
           # Generate a JSON report for artifact
           safety check -r requirements.txt --json > safety-results.json
+          # Check if vulnerabilities are found and can be fixed
+          if grep -q "vulnerabilities found" safety-results.json; then
+            echo "===== ATTEMPTING TO FIX VULNERABILITIES ====="
+            safety scan --apply-fixes
+          fi
         env:
           SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}
         continue-on-error: true
