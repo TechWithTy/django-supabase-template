@@ -66,7 +66,7 @@ jobs:
         with:
           name: bandit-results
           path: reports/bandit-results.json
-          
+
       - name: Upload Bandit HTML Results
         uses: actions/upload-artifact@v4
         with:
@@ -92,7 +92,7 @@ jobs:
           else
             echo "✅ No high severity issues found in application code." >> $GITHUB_STEP_SUMMARY
           fi
-          
+
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Safety Dependency Analysis" >> $GITHUB_STEP_SUMMARY
           echo "[Download Safety Results](../artifacts/safety-results)" >> $GITHUB_STEP_SUMMARY
@@ -107,7 +107,7 @@ jobs:
           else
             echo "⚠️ Safety report file not found." >> $GITHUB_STEP_SUMMARY
           fi
-          
+
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Note:** The Safety scan requires an API key to be set as a repository secret named 'SAFETY_API_KEY'." >> $GITHUB_STEP_SUMMARY
           echo "Get your API key from https://docs.safetycli.com/api-key" >> $GITHUB_STEP_SUMMARY
@@ -142,14 +142,14 @@ jobs:
         with:
           name: dependency-check-report
           path: reports/dependency-check-report.html
-          
+
       - name: Check for Critical Vulnerabilities
         run: |
           if grep -q "CVSS Score: [8-9]\|CVSS Score: 10" reports/dependency-check-report.html; then
             echo "::warning::Critical vulnerabilities found in dependencies!"
             echo "Critical vulnerabilities with CVSS score >= 8.0 found in dependencies!" >> $GITHUB_STEP_SUMMARY
           fi
-          
+
           # Add to summary
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### OWASP Dependency Check Results" >> $GITHUB_STEP_SUMMARY

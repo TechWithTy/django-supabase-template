@@ -2,15 +2,15 @@ name: Django + Supabase CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
     paths-ignore:
-      - '**.md'
-      - '_docs/**'
+      - "**.md"
+      - "_docs/**"
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, develop]
     paths-ignore:
-      - '**.md'
-      - '_docs/**'
+      - "**.md"
+      - "_docs/**"
   workflow_dispatch:
 
 permissions:
@@ -23,44 +23,44 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-        cache: 'pip'
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install black flake8 isort mypy
-    
-    - name: Run linting
-      run: |
-        mkdir -p linting_reports
-        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-          # In pull requests, auto-format the code
-          black backend/
-          isort --profile black backend/
-          # Check if any files were changed
-          if [[ -n "$(git status --porcelain)" ]]; then
-            git config --local user.email "github-actions[bot]@users.noreply.github.com"
-            git config --local user.name "github-actions[bot]"
-            git add .
-            git commit -m "Apply automatic formatting"
-            git push
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install black flake8 isort mypy
+
+      - name: Run linting
+        run: |
+          mkdir -p linting_reports
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            # In pull requests, auto-format the code
+            black backend/
+            isort --profile black backend/
+            # Check if any files were changed
+            if [[ -n "$(git status --porcelain)" ]]; then
+              git config --local user.email "github-actions[bot]@users.noreply.github.com"
+              git config --local user.name "github-actions[bot]"
+              git add .
+              git commit -m "Apply automatic formatting"
+              git push
+            fi
+          else
+            # In other events, just check formatting but save output as JSON
+            black --check --json backend/ > linting_reports/black_report.json || true
+            isort --check-only --profile black backend/ || true
           fi
-        else
-          # In other events, just check formatting but save output as JSON
-          black --check --json backend/ > linting_reports/black_report.json || true
-          isort --check-only --profile black backend/ || true
-        fi
-        # Always run type checking and linting with JSON output where possible
-        flake8 --format=json backend/ --config=backend/.flake8 > linting_reports/flake8_report.json || true
-        mypy backend/ --ignore-missing-imports || true
-    
+          # Always run type checking and linting with JSON output where possible
+          flake8 --format=json backend/ --config=backend/.flake8 > linting_reports/flake8_report.json || true
+          mypy backend/ --ignore-missing-imports || true
+
   test:
     name: Run Tests
     runs-on: ubuntu-latest
@@ -88,116 +88,117 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-    
+
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-        cache: 'pip'
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest pytest-django pytest-cov factory-boy
-    
-    - name: Setup Supabase Local Environment
-      uses: supabase/setup-cli@v1
-      with:
-        version: latest
-    
-    - name: Start Supabase Local Development
-      run: |
-        supabase start
-      env:
-        SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID: fake
-        SUPABASE_AUTH_EXTERNAL_GITHUB_SECRET: fake
-    
-    - name: Run tests
-      env:
-        DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY || 'test_secret_key' }}
-        DJANGO_DEBUG: "${{ secrets.DJANGO_DEBUG || 'True' }}"
-        DB_ENGINE: ${{ secrets.DB_ENGINE || 'django.db.backends.postgresql' }}
-        DB_NAME: ${{ secrets.DB_NAME || 'test_db' }}
-        DB_USER: ${{ secrets.DB_USER || 'postgres' }}
-        DB_PASSWORD: ${{ secrets.DB_PASSWORD || 'postgres' }}
-        DB_HOST: ${{ secrets.DB_HOST || 'localhost' }}
-        DB_PORT: ${{ secrets.DB_PORT || '5432' }}
-        SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'http://localhost:54321' }}
-        SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0' }}
-        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU' }}
-        SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET || 'your-super-secret-jwt-token-with-at-least-32-characters-long' }}
-        REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD || 'redis_default_password_for_ci' }}
-        REDIS_DB: ${{ secrets.REDIS_DB || '0' }}
-        REDIS_PORT: ${{ secrets.REDIS_PORT || '6379' }}
-        REDIS_URL: "redis://:${{ secrets.REDIS_PASSWORD || 'redis_default_password_for_ci' }}@localhost:${{ secrets.REDIS_PORT || '6379' }}/${{ secrets.REDIS_DB || '0' }}"
-      run: |
-        cd backend
-        pytest --cov=. --cov-report=xml
-    
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        file: ./backend/coverage.xml
-        fail_ci_if_error: false
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          # Install additional testing dependencies
+          pip install pytest pytest-django pytest-cov pytest-asyncio
+
+      - name: Setup Supabase Local Environment
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start Supabase Local Development
+        run: |
+          supabase start
+        env:
+          SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID: fake
+          SUPABASE_AUTH_EXTERNAL_GITHUB_SECRET: fake
+
+      - name: Run tests
+        env:
+          DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY || 'test_secret_key' }}
+          DJANGO_DEBUG: "${{ secrets.DJANGO_DEBUG || 'True' }}"
+          DB_ENGINE: ${{ secrets.DB_ENGINE || 'django.db.backends.postgresql' }}
+          DB_NAME: ${{ secrets.DB_NAME || 'test_db' }}
+          DB_USER: ${{ secrets.DB_USER || 'postgres' }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD || 'postgres' }}
+          DB_HOST: ${{ secrets.DB_HOST || 'localhost' }}
+          DB_PORT: ${{ secrets.DB_PORT || '5432' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'http://localhost:54321' }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0' }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU' }}
+          SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET || 'your-super-secret-jwt-token-with-at-least-32-characters-long' }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD || 'redis_default_password_for_ci' }}
+          REDIS_DB: ${{ secrets.REDIS_DB || '0' }}
+          REDIS_PORT: ${{ secrets.REDIS_PORT || '6379' }}
+          REDIS_URL: "redis://:${{ secrets.REDIS_PASSWORD || 'redis_default_password_for_ci' }}@localhost:${{ secrets.REDIS_PORT || '6379' }}/${{ secrets.REDIS_DB || '0' }}"
+        run: |
+          cd backend
+          pytest --cov=. --cov-report=xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./backend/coverage.xml
+          fail_ci_if_error: false
 
   build:
     name: Build Docker Image
     needs: test
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
-    
-    - name: Cache Docker layers
-      uses: actions/cache@v3
-      with:
-        path: /tmp/.buildx-cache
-        key: ${{ runner.os }}-buildx-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-buildx-
-    
-    - name: Login to GitHub Container Registry
-      uses: docker/login-action@v2
-      with:
-        registry: ghcr.io
-        username: ${{ github.repository_owner }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Set environment based on branch
-      id: set-env
-      run: |
-        if [[ ${{ github.ref }} == 'refs/heads/main' ]]; then
-          echo "env=production" >> $GITHUB_OUTPUT
-          echo "cache_tag=prod" >> $GITHUB_OUTPUT
-        else
-          echo "env=staging" >> $GITHUB_OUTPUT
-          echo "cache_tag=staging" >> $GITHUB_OUTPUT
-        fi
-    
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v4
-      with:
-        context: .
-        file: ./docker/Dockerfile
-        push: true
-        tags: |
-          ghcr.io/${{ github.repository }}:${{ steps.set-env.outputs.env }}
-          ghcr.io/${{ github.repository }}:${{ github.sha }}
-        cache-from: type=local,src=/tmp/.buildx-cache
-        cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
-        build-args: |
-          ENVIRONMENT=${{ steps.set-env.outputs.env }}
-    
-    # Temporary fix for caching issue
-    - name: Move cache
-      run: |
-        rm -rf /tmp/.buildx-cache
-        mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+      - uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Cache Docker layers
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set environment based on branch
+        id: set-env
+        run: |
+          if [[ ${{ github.ref }} == 'refs/heads/main' ]]; then
+            echo "env=production" >> $GITHUB_OUTPUT
+            echo "cache_tag=prod" >> $GITHUB_OUTPUT
+          else
+            echo "env=staging" >> $GITHUB_OUTPUT
+            echo "cache_tag=staging" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ steps.set-env.outputs.env }}
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+          build-args: |
+            ENVIRONMENT=${{ steps.set-env.outputs.env }}
+
+      # Temporary fix for caching issue
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache

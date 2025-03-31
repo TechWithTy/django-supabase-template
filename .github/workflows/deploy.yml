@@ -182,7 +182,7 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
-            cd ${{ secrets.DEPLOY_PATH }}
+            cd ${DEPLOY_PATH:-/var/www/django-supabase}
             mkdir -p backups
             docker-compose exec -T postgres pg_dump -U postgres -d postgres > backups/backup-$(date +%Y%m%d%H%M%S).sql
 
@@ -193,7 +193,7 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
-            cd ${{ secrets.DEPLOY_PATH }}
+            cd ${DEPLOY_PATH:-/var/www/django-supabase}
             docker pull ghcr.io/${{ steps.repo-vars.outputs.repo_owner }}/${{ steps.repo-vars.outputs.repo_name }}:${{ steps.set-env.outputs.env }}
             docker-compose -f docker-compose.${{ steps.set-env.outputs.env }}.yml up -d
             docker image prune -f
@@ -205,7 +205,7 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
-            cd ${{ secrets.DEPLOY_PATH }}
+            cd ${DEPLOY_PATH:-/var/www/django-supabase}
             # Run migrations
             docker-compose -f docker-compose.${{ steps.set-env.outputs.env }}.yml exec -T backend python manage.py migrate
 
