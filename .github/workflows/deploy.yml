@@ -1,19 +1,50 @@
-name: Django Supabase App CI/CD
+name: Django + Supabase Deployment Pipeline
 
 on:
   push:
     branches: [main, staging]
-  pull_request:
-    branches: [main, staging]
+    paths-ignore:
+      - '**.md'
+      - '_docs/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
 
 jobs:
+  validate:
+    name: Validate Environment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Supabase Configuration
+        id: supabase-config
+        run: |
+          if [[ -z "${{ vars.SUPABASE_URL || secrets.SUPABASE_URL }}" || -z "${{ vars.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_ROLE_KEY }}" ]]; then
+            echo "Error: Supabase configuration missing. Please set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY secrets."
+            exit 1
+          fi
+          echo "Supabase configuration validated successfully."
+
   test:
+    name: Run Critical Tests
+    needs: validate
     runs-on: ubuntu-latest
     services:
       redis:
         image: redis:7-alpine
         ports:
           - 6379:6379
+        options: >
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - uses: actions/checkout@v3
@@ -22,39 +53,64 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-          cache: 'pipenv'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pipenv
-          pipenv install --dev
+          pip install -r requirements.txt
+          pip install pytest pytest-django
       
-      - name: Run tests
+      - name: Run critical path tests
         run: |
           cd backend
-          pipenv run python manage.py test apps.supabase
+          python -m pytest apps/supabase/tests apps/users/tests/test_auth.py -v
         env:
           DJANGO_DEBUG: "true"
           DJANGO_SECRET_KEY: "test-secret-key-for-ci"
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD || 'redis_default_password_for_ci' }}
+          REDIS_DB: ${{ secrets.REDIS_DB || '0' }}
+          REDIS_PORT: ${{ secrets.REDIS_PORT || '6379' }}
+          REDIS_URL: "redis://:${{ secrets.REDIS_PASSWORD || 'redis_default_password_for_ci' }}@localhost:${{ secrets.REDIS_PORT || '6379' }}/${{ secrets.REDIS_DB || '0' }}"
 
   build:
+    name: Build and Push Image
     needs: test
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v3
 
-      - name: Set environment based on branch
+      - name: Set environment based on workflow
         id: set-env
         run: |
-          if [[ ${{ github.ref }} == 'refs/heads/main' ]]; then
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "env=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             echo "env=production" >> $GITHUB_OUTPUT
           else
             echo "env=staging" >> $GITHUB_OUTPUT
           fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Cache Docker layers
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
@@ -65,20 +121,30 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:${{ steps.set-env.outputs.env }}
             ghcr.io/${{ github.repository }}:${{ github.sha }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache,mode=max
-        env:
-          DOCKER_BUILDKIT: 1
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+          build-args: |
+            ENVIRONMENT=${{ steps.set-env.outputs.env }}
+            SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+            REDIS_URL="redis://:${{ secrets.REDIS_PASSWORD || 'redis_default_password_for_ci' }}@redis:6379/${{ secrets.REDIS_DB || '0' }}"
+
+      # Temporary fix for caching issue
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
   deploy:
+    name: Deploy to Server
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
     steps:
-      - name: Set environment based on branch
+      - name: Set environment based on workflow
         id: set-env
         run: |
-          if [[ ${{ github.ref }} == 'refs/heads/main' ]]; then
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "env=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             echo "env=production" >> $GITHUB_OUTPUT
             echo "deploy_url=${{ secrets.PRODUCTION_DEPLOY_URL }}" >> $GITHUB_OUTPUT
           else
@@ -94,7 +160,8 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
             cd ${{ secrets.DEPLOY_PATH }}
-            docker-compose exec -T postgres pg_dump -U postgres -d postgres -f /backups/backup-$(date +%Y%m%d%H%M%S).sql
+            mkdir -p backups
+            docker-compose exec -T postgres pg_dump -U postgres -d postgres > backups/backup-$(date +%Y%m%d%H%M%S).sql
 
       - name: Deploy to server
         uses: appleboy/ssh-action@v0.1.10
@@ -108,7 +175,7 @@ jobs:
             docker-compose -f docker-compose.${{ steps.set-env.outputs.env }}.yml up -d
             docker image prune -f
 
-      - name: Run database migrations
+      - name: Run migrations and verify services
         uses: appleboy/ssh-action@v0.1.10
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -116,9 +183,24 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
             cd ${{ secrets.DEPLOY_PATH }}
+            # Run migrations
             docker-compose -f docker-compose.${{ steps.set-env.outputs.env }}.yml exec -T backend python manage.py migrate
 
-      - name: Send deployment status notification
+            # Verify Redis connection
+            if ! docker-compose -f docker-compose.${{ steps.set-env.outputs.env }}.yml exec -T redis redis-cli ping | grep -q PONG; then
+              echo "Redis health check failed"
+              exit 1
+            fi
+
+            # Verify app is responsive
+            if ! curl -sSf ${{ steps.set-env.outputs.deploy_url }}/health/ > /dev/null; then
+              echo "Application health check failed"
+              exit 1
+            fi
+            
+            echo "Deployment verified successfully"
+
+      - name: Send deployment notification
         if: always()
         uses: slackapi/slack-github-action@v1.24.0
         with:
@@ -132,6 +214,19 @@ jobs:
                     "type": "mrkdwn",
                     "text": "*Deployment to ${{ steps.set-env.outputs.env }} ${{ job.status == 'success' && 'succeeded' || 'failed' }}!*\n${{ steps.set-env.outputs.deploy_url }}"
                   }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Environment:* ${{ steps.set-env.outputs.env }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Deployed by:* ${{ github.actor }}"
+                    }
+                  ]
                 },
                 {
                   "type": "context",

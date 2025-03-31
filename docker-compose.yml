@@ -13,6 +13,8 @@ services:
       - redis
     env_file:
       - .env
+    environment:
+      - REDIS_URL=${REDIS_URL:-redis://:${REDIS_PASSWORD:-redis_password}@redis:${REDIS_PORT:-6379}/${REDIS_DB:-0}}
     command: >-
       sh -c "python manage.py migrate &&
              python manage.py runserver 0.0.0.0:8000"
@@ -23,9 +25,15 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:${REDIS_PORT:-6379}"
     volumes:
       - redis-data:/data
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_password} --maxmemory 256mb --maxmemory-policy allkeys-lru --port ${REDIS_PORT:-6379} --databases ${REDIS_DATABASES:-16}
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_password}", "-p", "${REDIS_PORT:-6379}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     networks:
       - app-network
 
@@ -34,7 +42,6 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    command: celery -A core worker -l info
     volumes:
       - ./backend:/app
     depends_on:
@@ -42,6 +49,9 @@ services:
       - backend
     env_file:
       - .env
+    environment:
+      - REDIS_URL=${REDIS_URL:-redis://:${REDIS_PASSWORD:-redis_password}@redis:${REDIS_PORT:-6379}/${REDIS_DB:-0}}
+    command: celery -A core worker -l info
     networks:
       - app-network
 
@@ -58,6 +68,8 @@ services:
       - backend
     env_file:
       - .env
+    environment:
+      - REDIS_URL=${REDIS_URL:-redis://:${REDIS_PASSWORD:-redis_password}@redis:${REDIS_PORT:-6379}/${REDIS_DB:-0}}
     networks:
       - app-network
 
@@ -68,7 +80,7 @@ services:
       - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus-data:/prometheus
     ports:
-      - "9090:9090"
+      - "${PROMETHEUS_PORT:-9090}:9090"
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -86,13 +98,27 @@ services:
       - ./config/grafana/provisioning:/etc/grafana/provisioning
       - ./config/grafana/dashboards:/etc/grafana/dashboards
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USERNAME:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/dashboards/redis_dashboard.json
     ports:
-      - "3000:3000"
+      - "${GRAFANA_PORT:-3000}:3000"
     depends_on:
       - prometheus
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # Redis Exporter for Prometheus metrics
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    environment:
+      - REDIS_ADDR=redis://:${REDIS_PASSWORD:-redis_password}@redis:${REDIS_PORT:-6379}/${REDIS_DB:-0}
+    ports:
+      - "9121:9121"
+    depends_on:
+      - redis
     networks:
       - app-network
     restart: unless-stopped
