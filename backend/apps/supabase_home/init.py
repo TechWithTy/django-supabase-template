@@ -15,18 +15,16 @@ for path in sys.path:
         break
 
 # Now import from the actual supabase-py library
+
 try:
-    from supabase_py import create_client, Client
-except ImportError:
-    try:
         # Try alternative import path (depending on how the package was installed)
-        from supabase import create_client, Client
-    except ImportError:
-        raise ImportError(
-            "Could not import 'create_client' from either 'supabase_py' or 'supabase'. "
-            "Please ensure the supabase-py package is installed using: "
-            "pip install supabase"
-        )
+    from supabase import create_client, Client
+except ImportError:
+    raise ImportError(
+        "Could not import 'create_client' from either 'supabase_py' or 'supabase'. "
+        "Please ensure the supabase-py package is installed using: "
+        "pip install supabase"
+    )
 
 logger = logging.getLogger(" apps.supabase_home")
 

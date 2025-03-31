@@ -24,7 +24,7 @@ DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
 # Testing mode flag - used by middleware and test runners
 TESTING = os.getenv("TESTING", "False").lower() == "true"
 
-ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,backend").split(",")
 
 # Application definition
 DJANGO_APPS = [
