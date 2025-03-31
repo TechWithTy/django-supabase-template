@@ -61,12 +61,6 @@ jobs:
         flake8 --format=json backend/ --config=backend/.flake8 > linting_reports/flake8_report.json || true
         mypy backend/ --ignore-missing-imports --json-report linting_reports/mypy_report.json || true
     
-    - name: Upload linting reports
-      uses: actions/upload-artifact@v2
-      with:
-        name: linting-reports
-        path: linting_reports/
-
   test:
     name: Run Tests
     runs-on: ubuntu-latest
