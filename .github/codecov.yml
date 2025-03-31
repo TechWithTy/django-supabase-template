@@ -1,0 +1,75 @@
+# Codecov configuration with flags for different parts of the application
+
+coverage:
+  precision: 2
+  round: down
+  range: "70...100"
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: 90%
+
+# Define flag management rules
+flag_management:
+  default_rules:
+    carryforward: true
+    statuses:
+      - type: project
+        target: auto
+        threshold: 1%
+      - type: patch
+        target: 80%
+  individual_flags:
+    - name: backend
+      paths:
+        - backend/
+      carryforward: true
+      statuses:
+        - type: project
+          target: auto
+          threshold: 1%
+        - type: patch
+          target: 80%
+    - name: caching_celary_redis
+      paths:
+        - backend/apps/core/
+      carryforward: true
+    - name: credits
+      paths:
+        - backend/apps/credits/
+      carryforward: true
+    - name: monitoring
+      paths:
+        - backend/apps/monitoring/
+      carryforward: true
+    - name: stripe
+      paths:
+        - backend/apps/stripe_home/
+      carryforward: true
+    - name: users
+      paths:
+        - backend/apps/users/
+      carryforward: true
+    - name: supabase_home
+      paths:
+        - backend/apps/supabase_home/
+      carryforward: true
+
+# Ignore patterns
+ignore:
+  - "**/migrations/**"
+  - "**/admin.py"
+  - "**/__init__.py"
+  - "**/apps.py"
+
+# Comment behavior on pull requests
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default
+  require_changes: false
+  require_base: no
+  require_head: yes
