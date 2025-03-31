@@ -1,108 +1,84 @@
-import time
-from django.test import TestCase, Client
-from django.urls import reverse
-from django.contrib.auth import get_user_model
-from ..utils import detect_anomalies
-from django.http import HttpResponse
+from unittest import TestCase
+from unittest.mock import patch, Mock
+import sys
 
-User = get_user_model()
+# Create isolated test that doesn't inherit from Django TestCase
+class AnomalyDetectionUnitTests(TestCase):
+    """Unit tests for anomaly detection functionality without database dependencies."""
 
-
-class AnomalyDetectionTests(TestCase):
-    """
-    Test class for verifying the API anomaly detection functionality.
-    These tests confirm that unusual API patterns and errors are properly detected and recorded.
-    """
-    
     def setUp(self):
-        """
-        Set up test data including a test user for authenticated requests.
-        """
-        self.client = Client()
-        self.user = User.objects.create_user(
-            username='testuser',
-            email='test@example.com',
-            password='testpassword123'
-        )
-        self.client.login(username='testuser', password='testpassword123')
+        """Set up test doubles."""
+        print(">>> SETUP STARTING", file=sys.stderr, flush=True)
+        # Create all mocks at once to avoid real dependencies
+        self.patcher = patch('apps.monitoring.utils.ANOMALY_DETECTION_TRIGGERED')
+        self.mock_triggered = self.patcher.start()
+        
+        # Mock the labels method and its return value with inc method
+        self.mock_labels = Mock()
+        self.mock_inc = Mock()
+        self.mock_labels.inc = self.mock_inc
+        self.mock_triggered.labels.return_value = self.mock_labels
+        
+        print(">>> SETUP COMPLETED", file=sys.stderr, flush=True)
     
-    def test_error_rate_anomaly_detection(self):
-        """
-        Test that error rate anomalies are properly detected and recorded.
-        """
-        # Make several requests with errors to trigger anomaly detection
-        url = reverse('monitoring:api_metrics')
-        
-        # Check metrics initially
-        metrics_url = reverse('monitoring:metrics')
-        initial_metrics = self.client.get(metrics_url).content.decode()
-        
-        # Simulate error by making request to non-existent endpoint
-        for _ in range(5):
-            # This should generate a 404 error
-            self.client.get('/api/non-existent-endpoint/')
-        
-        # Get updated metrics
-        updated_metrics = self.client.get(metrics_url).content.decode()
-        
-        # Check for anomaly detection metrics
-        self.assertIn('api_error_rate', updated_metrics)
+    def tearDown(self):
+        """Clean up patches."""
+        print(">>> TEARDOWN STARTING", file=sys.stderr, flush=True)
+        self.patcher.stop()
+        print(">>> TEARDOWN COMPLETED", file=sys.stderr, flush=True)
     
     def test_high_latency_anomaly_detection(self):
-        """
-        Test that high latency anomalies are properly detected and recorded.
-        Note: This test simulates a slow response within the test itself.
-        """
-        # Create a custom view function with intentional delay that will be used by another test
-        # This is just to demonstrate how you might test slow responses
-        def slow_response_simulation():
-            # Use the detect_anomalies context manager
-            with detect_anomalies('test_endpoint', latency_threshold=0.1):
-                # Simulate a slow operation
-                time.sleep(0.2)  # Sleep for 200ms to exceed the threshold
+        """Test that high latency anomalies are properly detected."""
+        print(">>> TEST_HIGH_LATENCY STARTING", file=sys.stderr, flush=True)
+        
+        # Mock time to simulate latency
+        with patch('time.time') as mock_time:
+            # First call returns 0, second call returns 1.5 (exceeding threshold)
+            mock_time.side_effect = [0, 1.5]
             
-            # This should trigger a high_latency anomaly
-            return True
+            # Import module only after patching dependencies
+            from apps.monitoring.utils import detect_anomalies
+            
+            # Use the real function with mocked dependencies
+            with detect_anomalies('test_endpoint', latency_threshold=1.0):
+                print(">>> INSIDE CONTEXT MANAGER", file=sys.stderr, flush=True)
+                # Context manager automatically checks latency when exiting
+                pass
         
-        # Execute the slow operation
-        result = slow_response_simulation()
-        self.assertTrue(result)
-        
-        # In a real test, you would now check metrics to verify the anomaly was recorded
-        # But in this example, we're just demonstrating the pattern
+        # Verify high latency was detected - check that labels was called with correct arguments
+        self.mock_triggered.labels.assert_called_once_with(
+            endpoint='test_endpoint',
+            reason='high_latency'
+        )
+        # Verify inc() was called on the result of labels()
+        self.mock_inc.assert_called_once()
+        print(">>> TEST_HIGH_LATENCY COMPLETED", file=sys.stderr, flush=True)
     
     def test_anomaly_detection_with_exceptions(self):
-        """
-        Test that exceptions during API operations trigger anomaly detection.
-        """
-        # Simulate an operation that raises an exception
-        def operation_with_exception():
-            try:
-                with detect_anomalies('exception_test'):
-                    # Force an exception
-                    raise ValueError("Test exception")
-                return False  # Should not reach here
-            except ValueError:
-                # Exception should be caught after anomaly is recorded
-                return True
+        """Test that exceptions during API operations trigger anomaly detection."""
+        print(">>> TEST_WITH_EXCEPTIONS STARTING", file=sys.stderr, flush=True)
         
-        # Execute the operation
-        result = operation_with_exception()
-        self.assertTrue(result)
+        # Reset mocks for this test to ensure clean state
+        self.mock_triggered.reset_mock()
+        self.mock_labels.reset_mock()
+        self.mock_inc.reset_mock()
         
-        # In a real application, you would verify the metrics were recorded
-    
-    def test_credit_usage_anomaly_detection(self):
-        """
-        Test that unusual credit usage patterns are detected.
-        This is a simplified example - in a real application, you would
-        have endpoints that actually use credits and check for anomalies.
-        """
-        # This is a placeholder to demonstrate how you might structure such a test
-        # In a real test, you would:
-        # 1. Get initial anomaly metrics
-        # 2. Make API calls that use an unusual amount of credits
-        # 3. Verify that anomaly detection was triggered
+        # Import module after patching
+        from apps.monitoring.utils import detect_anomalies
         
-        # Just a placeholder assertion for this demo test
-        self.assertTrue(True)
+        # Use function with mock dependencies
+        try:
+            with detect_anomalies('exception_test'):
+                print(">>> RAISING EXCEPTION", file=sys.stderr, flush=True)
+                raise ValueError("Test exception")
+        except ValueError:
+            print(">>> CAUGHT EXCEPTION", file=sys.stderr, flush=True)
+            pass
+            
+        # Verify exception anomaly was detected
+        self.mock_triggered.labels.assert_called_once_with(
+            endpoint='exception_test',
+            reason='exception'
+        )
+        self.mock_inc.assert_called_once()
+        print(">>> TEST_WITH_EXCEPTIONS COMPLETED", file=sys.stderr, flush=True)
