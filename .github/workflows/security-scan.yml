@@ -51,24 +51,27 @@ jobs:
         run: |
           # First run with human-readable output directly to console
           echo "===== RUNNING BANDIT SECURITY SCAN ====="
-          bandit -r backend/ --exclude "**/tests/**,**/test_*.py,**/*_test.py" -f screen
+          bandit -r backend/ --exclude "**/tests/**,**/test_*.py,**/*_test.py" -f screen || true
+
+          # Create output directory
+          mkdir -p reports
 
           # Generate a more detailed report for CI analysis
-          bandit -r backend/ --exclude "**/tests/**,**/test_*.py,**/*_test.py" -f json -o bandit-results.json
-          bandit -r backend/ --exclude "**/tests/**,**/test_*.py,**/*_test.py" -f html -o bandit-results.html
+          bandit -r backend/ --exclude "**/tests/**,**/test_*.py,**/*_test.py" -f json -o reports/bandit-results.json || true
+          bandit -r backend/ --exclude "**/tests/**,**/test_*.py,**/*_test.py" -f html -o reports/bandit-results.html || true
         continue-on-error: true
 
-      - name: Upload Bandit Results
+      - name: Upload Bandit JSON Results
         uses: actions/upload-artifact@v4
         with:
           name: bandit-results
-          path: bandit-results.json
+          path: reports/bandit-results.json
           
       - name: Upload Bandit HTML Results
         uses: actions/upload-artifact@v4
         with:
           name: bandit-html-results
-          path: bandit-results.html
+          path: reports/bandit-results.html
 
       - name: Upload Safety Results
         uses: actions/upload-artifact@v4
@@ -84,7 +87,7 @@ jobs:
           echo "[Download Bandit Results](../artifacts/bandit-results)" >> $GITHUB_STEP_SUMMARY
           echo "[Download Bandit HTML Results](../artifacts/bandit-html-results)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          if grep -q "\"issue_severity\": \"HIGH\"" bandit-results.json; then
+          if grep -q "\"issue_severity\": \"HIGH\"" reports/bandit-results.json; then
             echo "⚠️ **High severity issues detected in code!** Please review the detailed reports." >> $GITHUB_STEP_SUMMARY
           else
             echo "✅ No high severity issues found in application code." >> $GITHUB_STEP_SUMMARY
