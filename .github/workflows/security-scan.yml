@@ -33,7 +33,13 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run Safety Check
-        run: safety scan -r requirements.txt --output screen
+        run: |
+          # Run with human-readable output to console
+          echo "===== RUNNING SAFETY SECURITY SCAN ====="
+          safety scan -r requirements.txt --output screen
+          
+          # Generate JSON report for artifact
+          safety scan -r requirements.txt --output json > safety-results.json
         continue-on-error: true
 
       - name: Run Bandit
@@ -63,6 +69,26 @@ jobs:
         with:
           name: bandit-results
           path: bandit-results.json
+          
+      - name: Upload Safety Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: safety-results
+          path: safety-results.json
+          
+      - name: Generate Summary
+        run: |
+          echo "## Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "[Download Bandit Results](../artifacts/bandit-results)" >> $GITHUB_STEP_SUMMARY
+          echo "[Download Safety Results](../artifacts/safety-results)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### High Severity Issues Summary" >> $GITHUB_STEP_SUMMARY
+          if grep -q "\"issue_severity\": \"HIGH\"" bandit-results.json; then
+            echo "⚠️ **High severity issues detected in code!** Please review the detailed reports." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No high severity issues found in application code." >> $GITHUB_STEP_SUMMARY
+          fi
 
   dependency-check:
     name: OWASP Dependency Check
