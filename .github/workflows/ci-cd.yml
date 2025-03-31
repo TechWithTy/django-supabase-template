@@ -137,7 +137,7 @@ jobs:
           # Create a small script to clear cache without Django settings issues
           cat > clear_cache.py << 'EOL'
           import os
-          os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+          os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")
           import django
           django.setup()
           from django.core.cache import cache
