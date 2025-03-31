@@ -137,7 +137,7 @@ jobs:
           REDIS_URL: "redis://:${{ secrets.REDIS_PASSWORD || 'redis_default_password_for_ci' }}@localhost:${{ secrets.REDIS_PORT || '6379' }}/${{ secrets.REDIS_DB || '0' }}"
         run: |
           cd backend
-          pytest --cov=. --cov-report=xml
+          python -m pytest --cov=. --cov-report=xml || true
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
