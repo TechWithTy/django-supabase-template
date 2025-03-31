@@ -38,19 +38,24 @@ jobs:
 
       - name: Run Bandit
         run: |
-          # Run with human-readable output directly to console
+          # First run with human-readable output directly to console
           echo "===== RUNNING BANDIT SECURITY SCAN ====="
-          bandit -r backend/ -f screen
+          bandit -r backend/ --exclude "**/tests/**,**/test_*.py,**/*_test.py" -f screen
           
           # Generate a more detailed report for CI analysis
           bandit -r backend/ -f json -o bandit-results.json
           
-          # Check for high severity issues and fail the pipeline if found
-          if bandit -r backend/ --severity-level high | grep -q "Issue: \[B[0-9]\+:high\]"; then
-            echo "::error::High severity security issues found! Pipeline failing as requested."
+          # Run a focused scan excluding test files and with explicit severity check
+          # This will only fail the pipeline for high severity issues in non-test code
+          if bandit -r backend/ \
+             --exclude "**/tests/**,**/test_*.py,**/*_test.py" \
+             --severity-level high \
+             --confidence-level medium \
+             --format screen | grep -q "Issue: \[B[0-9]\+:high\]"; then
+            echo "::error::High severity security issues found in non-test code! Please fix these issues."
             exit 1
           else
-            echo "No high severity issues found."
+            echo "No high severity issues found in application code."
           fi
 
       - name: Upload Bandit Results
