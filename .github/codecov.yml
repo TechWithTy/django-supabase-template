@@ -1,6 +1,6 @@
 comment:
   behavior: default
-  layout: reach, diff, flags, files
+  layout: reach, diff, flags, files, components
   require_base: false
   require_changes:
   - 0
@@ -109,6 +109,50 @@ flag_management:
       type: project
     - target: 80.0
       type: patch
+# Component configuration for more flexible reporting
+component_management:
+  default_rules:
+    statuses:
+      - type: project
+        target: auto
+        threshold: 1.0
+  individual_components:
+    - component_id: app_core
+      name: Core
+      paths:
+        - backend/core/.*
+    - component_id: app_users
+      name: Users
+      paths:
+        - backend/apps/users/.*
+    - component_id: app_monitoring
+      name: Monitoring
+      paths:
+        - backend/apps/monitoring/.*
+    - component_id: app_caching
+      name: Caching
+      paths:
+        - backend/apps/core/.*
+    - component_id: app_stripe
+      name: Stripe Integration
+      paths:
+        - backend/apps/stripe_home/.*
+    - component_id: app_supabase
+      name: Supabase Integration
+      paths:
+        - backend/apps/supabase_home/.*
+    - component_id: app_credits
+      name: Credits System
+      paths:
+        - backend/apps/credits/.*
+    - component_id: apis
+      name: API Components
+      paths:
+        - backend/.*/api/.*
+    - component_id: tests
+      name: Test Coverage
+      paths:
+        - backend/.*/tests/.*
 ignore:
 - (?s:.*/migrations/.*)\Z
 - (?s:.*/admin\.py)\Z
