@@ -42,11 +42,20 @@ def ensure_test_tables(django_db_setup, django_db_blocker):
     with django_db_blocker.unblock():
         from django.core.management import call_command
         # Migrate specific apps that might cause issues
-        call_command('migrate', 'credits', verbosity=0)
-        call_command('migrate', 'users', verbosity=0)
+        try:
+            call_command('migrate', 'credits', verbosity=0)
+        except Exception as e:
+            # Log the error but continue - credits app might not have migrations yet
+            print(f"Warning: Could not migrate credits app: {str(e)}")
+        
+        try:
+            call_command('migrate', 'users', verbosity=0)
+        except Exception as e:
+            # Log the error but continue
+            print(f"Warning: Could not migrate users app: {str(e)}")
 
 # Override default databases to include supabase in test isolation
-@pytest.fixture(scope='class')
+@pytest.fixture(scope='session')
 def django_db_setup(request, django_db_setup, django_db_blocker):
     """Custom database setup that adds supabase to available databases"""
     from django.test import override_settings

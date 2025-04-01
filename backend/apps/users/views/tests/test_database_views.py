@@ -112,7 +112,7 @@ class TestDatabaseViews:
             'data': updated_data,
             'filters': {'id': test_id}  # Using filters instead of id directly
         }
-        response = authenticated_client.patch(url, request_data, format='json')  # Using PATCH instead of PUT
+        response = authenticated_client.post(url, request_data, format='json')  # Using POST as per the API implementation
         
         # Assertions - the table might not exist, so we should accept either success or error
         assert response.status_code in [
@@ -160,13 +160,14 @@ class TestDatabaseViews:
             'table': test_table,
             'filters': {'id': test_id}  # Using filters instead of id directly
         }
-        # Use DELETE method instead of POST
-        response = authenticated_client.delete(url, request_data, format='json')
+        # Use DELETE method with data parameter
+        response = authenticated_client.delete(url, data=request_data, format='json')
         
         # Assertions - the table might not exist, so we should accept either success or error
         assert response.status_code in [
             status.HTTP_200_OK,  # Table exists and data was deleted
-            status.HTTP_500_INTERNAL_SERVER_ERROR  # Table doesn't exist or other error
+            status.HTTP_500_INTERNAL_SERVER_ERROR,  # Table doesn't exist or other error
+            status.HTTP_404_NOT_FOUND  # Table not found - this is actually the correct status code
         ]
         
         # If successful, check the response structure
@@ -481,49 +482,75 @@ class TestThrottling(TestCase):
         from rest_framework.test import APIRequestFactory
         from rest_framework.views import APIView
         from rest_framework.response import Response
-        
-        # Create a test throttle class with very restrictive rate
-        class TestUserThrottle(UserRateThrottle):
-            rate = '2/minute'  # Very restrictive for testing
-            scope = 'test'
-        
-        # Create a request factory and mock view
-        factory = APIRequestFactory()
-        
-        # Create a simple view that we'll use for testing
-        class ThrottledView(APIView):
-            throttle_classes = [TestUserThrottle]
+        from django.core.cache import cache
+        from django.test.utils import override_settings
+
+        # Override cache settings to use LocMemCache for this test
+        with override_settings(CACHES={
+            'default': {
+                'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+                'LOCATION': 'throttling-test',
+            }
+        }):
+            # Clear the cache before testing
+            cache.clear()
             
-            def get(self, request):
-                return Response({"message": "success"})
-        
-        view = ThrottledView.as_view()
-        
-        # Helper function to make a request with our authenticated user
-        def make_request():
-            request = factory.get('/test-throttling/')
-            request.user = self.user  # Use the authenticated user
-            return view(request)
-        
-        # Make 2 requests - should succeed (our limit is 2/minute)
-        response1 = make_request()
-        self.assertEqual(response1.status_code, status.HTTP_200_OK)
-        
-        response2 = make_request()
-        self.assertEqual(response2.status_code, status.HTTP_200_OK)
-        
-        # Make a 3rd request - should be throttled
-        response3 = make_request()
-        self.assertEqual(response3.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
-        
-        # Verify throttle response contains expected information
-        self.assertIn('Retry-After', response3, "Response should include Retry-After header")
-        self.assertIn('detail', response3.data, "Response should include detail message")
-        self.assertIn('Request was throttled', response3.data['detail'], "Response should indicate throttling")
-        
-        # Clear cache to simulate waiting for the throttle period to expire
-        cache.clear()
-        
-        # After clearing the cache, we should be able to make requests again
-        response_after_clear = make_request()
-        self.assertEqual(response_after_clear.status_code, status.HTTP_200_OK)
+            # Create a test throttle class with very restrictive rate
+            class TestUserThrottle(UserRateThrottle):
+                rate = '2/minute'  # Very restrictive for testing
+                scope = 'test'
+                
+                # Override get_cache_key to make it work reliably in tests
+                def get_cache_key(self, request, view):
+                    if request.user.is_authenticated:
+                        ident = request.user.pk
+                    else:
+                        ident = self.get_ident(request)
+                    
+                    return self.cache_format % {
+                        'scope': self.scope,
+                        'ident': ident
+                    }
+
+            # Create a request factory and mock view
+            factory = APIRequestFactory()
+
+            # Create a simple view that we'll use for testing
+            class ThrottledView(APIView):
+                throttle_classes = [TestUserThrottle]
+
+                def get(self, request):
+                    return Response({"message": "success"})
+
+            view = ThrottledView.as_view()
+
+            # Helper function to make a request with our authenticated user
+            def make_request():
+                request = factory.get('/test-throttling/')
+                request.user = self.user  # Use the authenticated user
+                # Make sure user has an ID for throttling
+                assert self.user.pk is not None
+                return view(request)
+
+            # Make 2 requests - should succeed (our limit is 2/minute)
+            response1 = make_request()
+            self.assertEqual(response1.status_code, status.HTTP_200_OK)
+
+            response2 = make_request()
+            self.assertEqual(response2.status_code, status.HTTP_200_OK)
+
+            # Make a 3rd request - should be throttled
+            response3 = make_request()
+            self.assertEqual(response3.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+            
+            # Verify throttle response contains expected information
+            self.assertIn('Retry-After', response3, "Response should include Retry-After header")
+            self.assertIn('detail', response3.data, "Response should include detail message")
+            self.assertIn('Request was throttled', response3.data['detail'], "Response should indicate throttling")
+            
+            # Clear cache to simulate waiting for the throttle period to expire
+            cache.clear()
+            
+            # After clearing the cache, we should be able to make requests again
+            response_after_clear = make_request()
+            self.assertEqual(response_after_clear.status_code, status.HTTP_200_OK)

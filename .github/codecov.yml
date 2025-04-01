@@ -58,6 +58,10 @@ flag_management:
       paths:
         - backend/apps/supabase_home/
       carryforward: true
+    - name: core
+      paths:
+        - backend/core/
+      carryforward: true
 
 # Ignore patterns
 ignore:

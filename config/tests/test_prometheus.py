@@ -1,5 +1,18 @@
 import os
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
+import sys
+
+# Add the project root to Python path first
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# Now add the backend directory to the path
+backend_dir = os.path.join(project_root, 'backend')
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+
+# Set correct Django settings module
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.core.settings')
 
 import django
 django.setup()
@@ -28,25 +41,65 @@ def test_prometheus_metrics():
         # Try accessing the metrics endpoint
         response = client.get('/metrics/', follow=True)
         print(f"Metrics request status: {response.status_code}")
-        
-        # Add a small delay between requests
-        time.sleep(0.5)
     
-    # Now try to get the metrics
-    print("\nFetching Prometheus metrics...")
-    response = client.get('/metrics/', follow=True)
+    # Now verify metrics were collected by checking the /metrics endpoint
+    metrics_response = client.get('/metrics/')
+    metrics_content = metrics_response.content.decode('utf-8')
     
-    if response.status_code == 200:
-        print("\nSuccess! Prometheus metrics endpoint is working.")
-        print("\nSample metrics (first 20 lines):")
-        # Print first 20 lines of metrics for preview
-        metrics_lines = response.content.decode('utf-8').split('\n')
-        for line in metrics_lines[:20]:
-            if line.strip() and not line.startswith('#'):
-                print(line)
+    print("\n===== PROMETHEUS METRICS VERIFICATION =====")
+    print(f"Metrics endpoint status: {metrics_response.status_code}")
+    
+    # Check that the response is successful
+    assert metrics_response.status_code == 200, "Metrics endpoint returned non-200 status code"
+    
+    # Check for expected metric types in the response
+    expected_metrics = [
+        'django_http_requests_total',
+        'django_http_responses_total_by_status',
+        'django_http_requests_latency_seconds',
+    ]
+    
+    success = True
+    for metric in expected_metrics:
+        if metric in metrics_content:
+            print(f" Found metric: {metric}")
+        else:
+            print(f" Missing metric: {metric}")
+            success = False
+    
+    # Check for our specific test patterns
+    test_patterns = [
+        'path="/admin/"',
+        'path="/non-existent-page/"',
+        'path="/metrics/"',
+        'status="404"',
+    ]
+    
+    print("\n----- Request Pattern Checks -----")
+    for pattern in test_patterns:
+        if pattern in metrics_content:
+            print(f" Found test pattern: {pattern}")
+        else:
+            # Try partial matching for path patterns as implementations may vary
+            if 'path=' in pattern and any(p in metrics_content for p in [pattern.replace('"', "'"), pattern.split('=')[1]]):
+                print(f" Found similar pattern to: {pattern} (format may differ)")
+            else:
+                print(f" Missing test pattern: {pattern}")
+    
+    # Print some actual metrics for verification
+    print("\n----- Sample Metrics (first 5) -----")
+    metric_lines = [line for line in metrics_content.split('\n') 
+                   if line.strip() and not line.startswith('#')]
+    for line in metric_lines[:5]:
+        print(line)
+    
+    print("\n===== PROMETHEUS INTEGRATION STATUS =====")
+    if success:
+        print(" PROMETHEUS METRICS COLLECTION WORKING PROPERLY")
     else:
-        print(f"\nError accessing metrics: Status code {response.status_code}")
-        print(f"Response content: {response.content[:500]}")
+        print(" SOME EXPECTED PROMETHEUS METRICS ARE MISSING")
+        
+    assert success, "Some expected Prometheus metrics are missing!"
 
 if __name__ == '__main__':
     test_prometheus_metrics()

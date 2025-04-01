@@ -4,7 +4,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 import sentry_sdk
 from sentry_sdk.integrations.django import DjangoIntegration
-from utils.sensitive import load_environment_files
+from backend.utils.sensitive import load_environment_files
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
