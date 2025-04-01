@@ -35,6 +35,16 @@ These are sensitive and should be handled more carefully🔐
     2. Configure AUTH_USER_MODEL in settings.py to use the correct user model
     3. Update the test to use a mock user instead of accessing the database
 
+## Testing Improvements
+
+- [ ] Fix the missing 'authentication_customuser' table issue in tests
+  - Both `test_monitoring_local.py` and `test_user_behavior_and_anomaly_detection.py` have tests that are being skipped due to the missing table
+  - Either create the table through migrations or update the test to use a different user model
+  - Possible solutions:
+    1. Run migrations to create the authentication_customuser table
+    2. Configure AUTH_USER_MODEL in settings.py to use the correct user model
+    3. Update tests to use mock users instead of accessing the database
+
 ## Database Tables Needed
 🧪 Update credit allocation test stripe and user views to use real db to check for table
 
@@ -46,7 +56,7 @@ These are sensitive and should be handled more carefully🔐
   - Ensure proper schema permissions for test tables
 - Ensure proper foreign key relationships between tables
 - Consider adding row-level security (RLS) policies for multi-tenancy
-
+![alt text](image.png)
 ## Tests That Need Updating When Credits Table is Created
 
 1. `backend/apps/users/views/creditable_views/tests/test_creditable_views.py`
