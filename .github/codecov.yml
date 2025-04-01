@@ -39,7 +39,7 @@ flag_management:
       type: project
     - target: 80.0
       type: patch
-  - name: caching_celery_redis  # Corrected spelling from "celary" to "celery"
+  - name: caching_celery_redis  
     carryforward: true
     paths:
     - ^backend/apps/core/.*
