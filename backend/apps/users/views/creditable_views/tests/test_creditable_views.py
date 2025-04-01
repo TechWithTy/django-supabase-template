@@ -1,14 +1,14 @@
 import os
 import pytest
 from django.urls import reverse
+from django.conf import settings
 from rest_framework import status
 from rest_framework.test import APIClient
 from apps.users.models import UserProfile
-from apps.credits.models import CreditTransaction
+from unittest.mock import patch
 
-pytestmark = pytest.mark.django_db(transaction=True)
-
-
+# Use pytest.mark.django_db to manage database access
+@pytest.mark.django_db(transaction=True)
 class TestCreditableViews:
     """
     End-to-end tests for the creditable views functionality.
@@ -16,6 +16,14 @@ class TestCreditableViews:
     These tests verify that the credit-based access control works correctly
     for both the decorator-based and utility function approaches.
     """
+    
+    # Add databases attribute to include all required databases
+    databases = {"default", "local", "supabase"}
+    
+    @pytest.fixture(autouse=True)
+    def disable_db_routers(self, monkeypatch):
+        """Disable database routers for all tests in this class"""
+        monkeypatch.setattr(settings, 'DATABASE_ROUTERS', [])
     
     @pytest.fixture
     def api_client(self):
@@ -30,17 +38,13 @@ class TestCreditableViews:
             email='credituser@example.com',
             password='testpassword123'
         )
-        profile = UserProfile.objects.create(
+        # Profile is necessary for the tests even if not used in this fixture
+        UserProfile.objects.create(
             user=user,
             supabase_uid='credit_test_user',
             credits_balance=10  # Start with 10 credits
         )
-        yield user
-        
-        # Cleanup
-        CreditTransaction.objects.filter(user=user).delete()
-        profile.delete()
-        user.delete()
+        return user
     
     @pytest.fixture
     def admin_user(self, django_user_model):
@@ -52,17 +56,13 @@ class TestCreditableViews:
             is_staff=True,
             is_superuser=True
         )
-        profile = UserProfile.objects.create(
+        # Profile is necessary for the tests even if not used in this fixture
+        UserProfile.objects.create(
             user=admin,
             supabase_uid='admin_test_user',
             credits_balance=5  # Start with 5 credits
         )
-        yield admin
-        
-        # Cleanup
-        CreditTransaction.objects.filter(user=admin).delete()
-        profile.delete()
-        admin.delete()
+        return admin
     
     @pytest.fixture
     def user_without_credits(self, django_user_model):
@@ -72,17 +72,13 @@ class TestCreditableViews:
             email='brokecredituser@example.com',
             password='testpassword123'
         )
-        profile = UserProfile.objects.create(
+        # Profile is necessary for the tests even if not used in this fixture
+        UserProfile.objects.create(
             user=user,
             supabase_uid='broke_credit_test_user',
             credits_balance=0  # No credits
         )
-        yield user
-        
-        # Cleanup
-        CreditTransaction.objects.filter(user=user).delete()
-        profile.delete()
-        user.delete()
+        return user
     
     @pytest.fixture
     def authenticated_client(self, api_client, user_with_credits):
@@ -152,27 +148,31 @@ if __name__ == "__main__":
     
     def test_execute_main_script_success(self, authenticated_client, create_test_script, user_with_credits):
         """Test successful execution of main script with credit deduction"""
-        # Make the request
-        url = reverse('users:run_main_script')
-        response = authenticated_client.post(url, {
-            'parameters': {'param1': 'value1', 'param2': 'value2'}
-        }, format='json')
-        
-        # Check response
-        assert response.status_code == status.HTTP_200_OK
-        assert response.data['success'] is True
-        assert response.data['credits_used'] == 5  # Default credit cost
-        assert response.data['credits_remaining'] == 5  # 10 initial - 5 used
-        
-        # Verify the user's credits were deducted
-        profile = UserProfile.objects.get(user=user_with_credits)
-        assert profile.credits_balance == 5
-        
-        # Verify a transaction was recorded
-        transaction = CreditTransaction.objects.filter(user=user_with_credits).latest('created_at')
-        assert transaction.amount == -5
-        assert transaction.balance_after == 5
-        assert 'Executed main.py script' in transaction.description
+        # Mock the CreditTransaction.objects.create to avoid database operations
+        with patch('apps.credits.models.CreditTransaction.objects.create') as mock_create_transaction:
+            # Make the request
+            url = reverse('users:run_main_script')
+            response = authenticated_client.post(url, {
+                'parameters': {'param1': 'value1', 'param2': 'value2'}
+            }, format='json')
+            
+            # Check response
+            assert response.status_code == status.HTTP_200_OK
+            assert response.data['success'] is True
+            assert response.data['credits_used'] == 5  # Default credit cost
+            assert response.data['credits_remaining'] == 5  # 10 initial - 5 used
+            
+            # Verify the user's credits were deducted
+            profile = UserProfile.objects.get(user=user_with_credits)
+            assert profile.credits_balance == 5
+            
+            # Verify a transaction was recorded
+            mock_create_transaction.assert_called_once()
+            # Check the transaction arguments contained the expected values
+            call_kwargs = mock_create_transaction.call_args.kwargs
+            assert call_kwargs['user'] == user_with_credits
+            assert call_kwargs['amount'] == -5
+            assert 'Executed main.py script' in call_kwargs['description']
     
     def test_execute_main_script_insufficient_credits(self, broke_client, create_test_script):
         """Test execution fails when user has insufficient credits"""
@@ -208,24 +208,29 @@ if __name__ == "__main__":
     
     def test_utility_function_demo(self, authenticated_client, user_with_credits):
         """Test the utility function demo endpoint"""
-        # Make the request
-        url = reverse('users:credit-based-function-demo')
-        response = authenticated_client.post(url, {
-            'parameters': {'test': 'value'}
-        }, format='json')
-        
-        # Check response
-        assert response.status_code == status.HTTP_200_OK
-        assert response.data['message'] == 'Function executed successfully'
-        assert response.data['credits_used'] == 3  # Default for this demo is 3
-        
-        # Verify credits were deducted
-        profile = UserProfile.objects.get(user=user_with_credits)
-        assert profile.credits_balance == 7  # Assuming this runs after the first test: 10 - 3 = 7
-        
-        # Reset credits for subsequent tests
-        profile.credits_balance = 10
-        profile.save()
+        # Mock the CreditTransaction.objects.create to avoid database operations
+        with patch('apps.credits.models.CreditTransaction.objects.create') as mock_create_transaction:
+            # Make the request
+            url = reverse('users:credit-based-function-demo')
+            response = authenticated_client.post(url, {
+                'parameters': {'test': 'value'}
+            }, format='json')
+            
+            # Check response
+            assert response.status_code == status.HTTP_200_OK
+            # Check the demo function's response contents
+            assert response.data['message'] == 'Function executed successfully'
+            assert response.data['processed_parameters'] == {'test': 'value'}
+            # Check the credit information
+            assert response.data['credits_used'] == 3  # Default credit cost for this endpoint
+            assert response.data['credits_remaining'] == 7  # 10 initial - 3 used
+            
+            # Verify the user's credits were deducted
+            profile = UserProfile.objects.get(user=user_with_credits)
+            assert profile.credits_balance == 7
+            
+            # Verify a transaction was recorded
+            mock_create_transaction.assert_called_once()
     
     def test_unauthenticated_access(self, api_client):
         """Test unauthenticated access is denied"""

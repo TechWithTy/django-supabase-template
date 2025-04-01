@@ -123,14 +123,8 @@ def authenticated_client(test_user_credentials):
     
     return client
 
-# Use django_db_setup fixture to ensure database is set up for session fixtures
 @pytest.fixture(scope="session")
-def django_db_setup(django_db_setup, django_db_blocker):
-    """Set up the database for session-scoped fixtures"""
-    pass
-
-@pytest.fixture(scope="session")
-def test_django_user(test_user_credentials, django_db_setup, django_db_blocker):
+def test_django_user(test_user_credentials, django_db_blocker):
     """Create a test user in the Django database
     
     This creates a Django User model instance matching the Supabase user
