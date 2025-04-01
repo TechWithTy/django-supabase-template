@@ -22,7 +22,7 @@ These are sensitive and should be handled more carefully🔐
 🪳 https://github.com/supabase/realtime/issues/1111#issuecomment-2742384131
 
 ## Monitoring Tests Fixes Needed
-
+🪶Implement Pulsar
 🧪 Fixed PytestReturnNotNoneWarning in test functions by using assertions instead of return values
 
 🧪 Fixed PytestCollectionWarning for test classes with constructors by renaming them to avoid test collection
