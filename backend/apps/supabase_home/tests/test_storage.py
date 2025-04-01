@@ -464,7 +464,7 @@ class TestRealSupabaseStorageService:
                 assert any(key in signed_url for key in ["token", "signedURL", "url", "signed_url"])
             
             # 8. Download files
-            downloaded_1 = storage_service.download_file(
+            downloaded_1, content_type_1 = storage_service.download_file(
                 bucket_id=test_bucket_name,
                 path=test_file_1_path,
                 auth_token=service_key  # Add auth token
@@ -475,7 +475,7 @@ class TestRealSupabaseStorageService:
             assert downloaded_1.decode() == file_1_content
             
             # Download the moved file
-            downloaded_moved = storage_service.download_file(
+            downloaded_moved, content_type_moved = storage_service.download_file(
                 bucket_id=test_bucket_name,
                 path=test_move_destination,
                 auth_token=service_key  # Add auth token
@@ -486,7 +486,7 @@ class TestRealSupabaseStorageService:
             assert downloaded_moved.decode() == file_2_content
             
             # Download the copied file
-            downloaded_copied = storage_service.download_file(
+            downloaded_copied, content_type_copied = storage_service.download_file(
                 bucket_id=test_bucket_name,
                 path=test_copy_destination,
                 auth_token=service_key  # Add auth token
