@@ -38,7 +38,7 @@ These are sensitive and should be handled more carefully🔐
 ## Testing Improvements
 
 - [ ] Fix the missing 'authentication_customuser' table issue in tests
-  - Both `test_monitoring_local.py` and `test_user_behavior_and_anomaly_detection.py` have tests that are being skipped due to the missing table
+  -  `test_monitoring_local.py` `test_user_behavior_and_anomaly_detection.py` `authentication_customuser`  `test_user_behavior_and_anomaly_detection.py` have tests that are being skipped due to the missing table
   - Either create the table through migrations or update the test to use a different user model
   - Possible solutions:
     1. Run migrations to create the authentication_customuser table

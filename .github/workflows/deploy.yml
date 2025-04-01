@@ -67,8 +67,8 @@ jobs:
 
       - name: Run critical path tests
         run: |
-          cd backend
-          python -m pytest  apps/users/views/tests/test_auth_views.py -v --log-cli-level=DEBUG --log-cli-format="%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
+          # Run from project root with full path to test file
+          python -m pytest backend/apps/users/views/tests/test_auth_views.py -v --log-cli-level=DEBUG --log-cli-format="%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
         env:
           DJANGO_DEBUG: "true"
           DJANGO_SECRET_KEY: "test-secret-key-for-ci"
