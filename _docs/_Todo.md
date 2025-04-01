@@ -21,11 +21,26 @@ These are sensitive and should be handled more carefully🔐
 
 🪳 https://github.com/supabase/realtime/issues/1111#issuecomment-2742384131
 
+## Monitoring Tests Fixes Needed
+
+🧪 Fixed PytestReturnNotNoneWarning in test functions by using assertions instead of return values
+
+🧪 Fixed PytestCollectionWarning for test classes with constructors by renaming them to avoid test collection
+
+🧪 Database table issue in middleware tests:
+  - Test failing with `django.db.utils.ProgrammingError: relation "authentication_customuser" does not exist`
+  - Need to create the authentication_customuser table or configure the correct user model
+  - Options:
+    1. Run migrations to create the authentication_customuser table
+    2. Configure AUTH_USER_MODEL in settings.py to use the correct user model
+    3. Update the test to use a mock user instead of accessing the database
+
 ## Database Tables Needed
-🧪 Update credit allocation test stripe and  user views to use real db to check for table
+🧪 Update credit allocation test stripe and user views to use real db to check for table
 
 - `credits_credittransaction` - Table for storing credit transactions
 - `users_userprofile` - Table for storing user profile information
+- `authentication_customuser` - Table for authentication (missing in current test environment)
 - Test tables for database operations:
   - Create temporary test tables for database CRUD operations tests
   - Ensure proper schema permissions for test tables
