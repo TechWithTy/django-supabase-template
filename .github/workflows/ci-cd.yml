@@ -136,12 +136,11 @@ jobs:
           REDIS_PORT: ${{ secrets.REDIS_PORT || '6379' }}
           REDIS_URL: "redis://:${{ secrets.REDIS_PASSWORD || 'redis_default_password_for_ci' }}@localhost:${{ secrets.REDIS_PORT || '6379' }}/${{ secrets.REDIS_DB || '0' }}"
         run: |
-          cd backend
-          # Run all backend tests and generate combined coverage
-          python -m pytest --cov=. --cov-report=xml:coverage.xml --junitxml=junit.xml -o junit_family=legacy || true
+          # Run all backend tests and generate combined coverage from project root
+          python -m pytest backend/ --cov=backend --cov-report=xml:backend/coverage.xml --junitxml=backend/junit.xml -o junit_family=legacy || true
           
           # Ensure all coverage files exist (create empty if needed)
-          for file in coverage.xml api-coverage.xml integration-coverage.xml; do
+          for file in backend/coverage.xml backend/api-coverage.xml backend/integration-coverage.xml; do
             if [ ! -f $file ]; then
               echo "<?xml version='1.0' encoding='utf-8'?><coverage version='1.0'><packages></packages></coverage>" > $file
             fi
@@ -149,7 +148,7 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
-          files: ./backend/coverage.xml
+          files: ./backend/coverage.xml ./backend/api-coverage.xml ./backend/integration-coverage.xml
           slug: "TechWithTy/django-supabase-template"
           flags: backend
           name: codecov-umbrella
